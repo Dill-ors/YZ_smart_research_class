@@ -1,0 +1,9 @@
+
+md
+doc
+dist
+.trae
+*.md
+node_modules
+*.iml
+*.xml
