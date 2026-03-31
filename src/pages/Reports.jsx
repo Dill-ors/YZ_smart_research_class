@@ -7,10 +7,12 @@ import SurveyEngine from '../components/SurveyEngine';
 import SurveyPublishModal from '../components/SurveyPublishModal';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from '../utils/rbac';
+import DataService from '../services/dataService';
 
 export default function Reports() {
   const { user } = useAuth();
   const [reports, setReports] = useState([]);
+  const [allResponses, setAllResponses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('list'); // list, create, edit, board
   const [currentSurvey, setCurrentSurvey] = useState(null);
@@ -22,21 +24,15 @@ export default function Reports() {
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
-    setLoading(true);
-    const localReportsStr = localStorage.getItem('survey_system_reports');
-    if (!localReportsStr) {
-      const mockReports = [
-        { id: 1, title: '2026春季全区教学进度调研报告', status: 'published', created_at: '2026-03-01', response_count: 120, category: '教学管理' },
-        { id: 2, title: '青岛五十三中教师满意度调查', status: 'draft', created_at: '2026-03-15', response_count: 0, category: '人力资源' },
-        { id: 3, title: '各校实验课开设情况抽查', status: 'closed', created_at: '2026-02-20', response_count: 450, category: '教研抽查' },
-        { id: 4, title: '学生课后作业负担问卷', status: 'recalled', created_at: '2026-03-18', response_count: 12, category: '教学管理' }
-      ];
-      localStorage.setItem('survey_system_reports', JSON.stringify(mockReports));
-      setReports(mockReports);
-    } else {
-      setReports(JSON.parse(localReportsStr));
-    }
-    setLoading(false);
+    const loadData = async () => {
+      setLoading(true);
+      const fetchedReports = await DataService.getReports({ currentUser: user });
+      setReports(fetchedReports);
+      const fetchedResponses = await DataService.getResponses();
+      setAllResponses(fetchedResponses);
+      setLoading(false);
+    };
+    loadData();
   }, []);
 
   const addLog = (surveyId, action, details) => {
@@ -45,26 +41,28 @@ export default function Reports() {
       surveyId,
       action,
       details,
-      operator: 'admin',
+      operator: user?.name || 'admin',
       time: new Date().toLocaleString()
     };
     setLogs(prev => [newLog, ...prev]);
   };
 
-  const handleStatusChange = (id, newStatus, actionName) => {
+  const handleStatusChange = async (id, newStatus, actionName) => {
     if (window.confirm(`确定要${actionName}吗？`)) {
-      const updatedReports = reports.map(r => r.id === id ? { ...r, status: newStatus } : r);
-      setReports(updatedReports);
-      localStorage.setItem('survey_system_reports', JSON.stringify(updatedReports));
-      addLog(id, actionName, `状态变更为：${newStatus}`);
+      const report = reports.find(r => r.id === id);
+      if (report) {
+        const updatedReport = { ...report, status: newStatus };
+        await DataService.saveReport(updatedReport);
+        setReports(reports.map(r => r.id === id ? updatedReport : r));
+        addLog(id, actionName, `状态变更为：${newStatus}`);
+      }
     }
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (window.confirm('确定要删除这份问卷吗？删除后将无法恢复。')) {
-      const updatedReports = reports.filter(r => r.id !== id);
-      setReports(updatedReports);
-      localStorage.setItem('survey_system_reports', JSON.stringify(updatedReports));
+      await DataService.deleteReport(id);
+      setReports(reports.filter(r => r.id !== id));
     }
   };
 
@@ -73,20 +71,16 @@ export default function Reports() {
     setActiveTab('edit');
   };
 
-  const handleSubmitSurvey = (answers) => {
-    const updatedReports = reports.map(r => {
-      if (r.id === currentSurvey.id) {
-        return { ...r, response_count: (r.response_count || 0) + 1 };
-      }
-      return r;
-    });
-    setReports(updatedReports);
-    localStorage.setItem('survey_system_reports', JSON.stringify(updatedReports));
+  const handleSubmitSurvey = async (answers) => {
+    const report = reports.find(r => r.id === currentSurvey.id);
+    if (report) {
+      const updatedReport = { ...report, response_count: (report.response_count || 0) + 1 };
+      await DataService.saveReport(updatedReport);
+      setReports(reports.map(r => r.id === currentSurvey.id ? updatedReport : r));
+    }
 
-    // Save response record
-    const responses = JSON.parse(localStorage.getItem('survey_system_responses') || '[]');
     const newResponse = {
-      id: Date.now(),
+      id: Date.now().toString(),
       surveyId: currentSurvey.id,
       userId: user?.username || 'anonymous',
       userName: user?.name || '匿名用户',
@@ -94,48 +88,46 @@ export default function Reports() {
       answers,
       time: new Date().toLocaleString()
     };
-    responses.push(newResponse);
-    localStorage.setItem('survey_system_responses', JSON.stringify(responses));
+    await DataService.addResponse(newResponse);
+    setAllResponses([...allResponses, newResponse]);
 
-    // Retain answers for 'success' activeTab
     localStorage.setItem(`survey_system_success_${currentSurvey.id}`, JSON.stringify(newResponse.answers));
     setActiveTab('success');
   };
 
-  const handleSaveSurvey = (surveyData) => {
-    let updatedReports;
+  const handleSaveSurvey = async (surveyData) => {
+    let updatedReport;
     if (surveyData.id) {
-      // Edit existing
-      updatedReports = reports.map(r => r.id === surveyData.id ? { ...r, ...surveyData } : r);
+      updatedReport = { ...reports.find(r => r.id === surveyData.id), ...surveyData };
     } else {
-      // Create new
-      const newSurvey = {
+      updatedReport = {
         ...surveyData,
-        id: Date.now(),
+        id: Date.now().toString(),
         status: 'draft',
         created_at: new Date().toISOString().split('T')[0],
         response_count: 0
       };
-      updatedReports = [newSurvey, ...reports];
-      addLog(newSurvey.id, '创建问卷', '新问卷被创建');
+      addLog(updatedReport.id, '创建问卷', '新问卷被创建');
     }
-    setReports(updatedReports);
-    localStorage.setItem('survey_system_reports', JSON.stringify(updatedReports));
+    await DataService.saveReport(updatedReport);
+    setReports(surveyData.id ? reports.map(r => r.id === surveyData.id ? updatedReport : r) : [updatedReport, ...reports]);
     setActiveTab('list');
     setCurrentSurvey(null);
   };
-
 
   const openPublishModal = (survey) => {
     setSurveyToPublish(survey);
     setShowPublishModal(true);
   };
 
-  const handlePublishConfirm = (config) => {
-    const updatedReports = reports.map(r => r.id === surveyToPublish.id ? { ...r, status: 'published' } : r);
-    setReports(updatedReports);
-    localStorage.setItem('survey_system_reports', JSON.stringify(updatedReports));
-    addLog(surveyToPublish.id, '发布问卷', `发布配置: ${JSON.stringify(config)}`);
+  const handlePublishConfirm = async (config) => {
+    const report = reports.find(r => r.id === surveyToPublish.id);
+    if (report) {
+      const updatedReport = { ...report, status: 'published', publishConfig: config };
+      await DataService.saveReport(updatedReport);
+      setReports(reports.map(r => r.id === surveyToPublish.id ? updatedReport : r));
+      addLog(surveyToPublish.id, '发布问卷', `发布配置: ${JSON.stringify(config)}`);
+    }
     setShowPublishModal(false);
     setSurveyToPublish(null);
   };
@@ -153,7 +145,7 @@ export default function Reports() {
 
   if (activeTab === 'create' || activeTab === 'edit' || activeTab === 'fill' || activeTab === 'board') {
     const responses = (activeTab === 'board' || activeTab === 'fill')
-      ? JSON.parse(localStorage.getItem('survey_system_responses') || '[]').filter(r => r.surveyId === currentSurvey?.id)
+      ? allResponses.filter(r => r.surveyId === currentSurvey?.id)
       : [];
     return (
         <SurveyEngine 
@@ -189,7 +181,23 @@ export default function Reports() {
 
   const visibleReports = hasPermission(user, 'canModifyStructure') || hasPermission(user, 'canViewAll') 
     ? reports 
-    : reports.filter(r => r.status === 'published');
+    : reports.filter(r => {
+        if (r.status !== 'published') return false;
+        
+        // If current user is a teacher, they should only see surveys assigned to them
+        if (user && user.role === 'teacher') {
+            if (!r.publishConfig || !r.publishConfig.target) return true; // Backward compatibility
+            
+            const target = r.publishConfig.target;
+            console.log('Survey Target:', r.title, target, 'User:', user.id, user.name);
+            if (target.type === 'all') return true;
+            if (target.type === 'role' && target.roles.includes('教师')) return true;
+            if (target.type === 'school' && target.schools.includes(user.school)) return true;
+            if (target.type === 'user' && target.userIds && target.userIds.includes(user.id)) return true;
+            return false;
+        }
+        return true;
+      });
 
   return (
     <div className="space-y-6">

@@ -1,45 +1,98 @@
-const STORAGE_KEYS = {
-  SURVEYS: 'survey_system_surveys',
-  REPORTS: 'survey_system_reports',
-  USERS: 'survey_system_users',
-  TARGETS: 'survey_system_targets'
+const getApiBase = () => {
+  // Use proxy path to avoid hardcoded ports and CORS issues
+  return `/api`;
 };
 
 const DataService = {
-  init() {
-      if (!localStorage.getItem(STORAGE_KEYS.SURVEYS)) {
-          localStorage.setItem(STORAGE_KEYS.SURVEYS, JSON.stringify([]));
-      }
-      if (!localStorage.getItem(STORAGE_KEYS.REPORTS)) {
-          localStorage.setItem(STORAGE_KEYS.REPORTS, JSON.stringify([]));
-      }
-      if (!localStorage.getItem(STORAGE_KEYS.TARGETS)) {
-          localStorage.setItem(STORAGE_KEYS.TARGETS, JSON.stringify([]));
-      }
-      
-      if (!localStorage.getItem(STORAGE_KEYS.USERS) || JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS)).length === 0) {
-          this.populateMockUsers();
+  async init() {
+    try {
+      const users = await this.getAllUsers();
+      if (users.length === 0) {
+        await this.populateMockUsers();
       }
 
-      const surveys = JSON.parse(localStorage.getItem(STORAGE_KEYS.SURVEYS));
-      if (surveys.length < 5) { // Check if we need to populate initial data
-          this.populateInitialData();
+      const surveys = await this._getAllSurveysRaw();
+      if (surveys.length < 5) {
+        await this.populateInitialData();
       }
+
+      const reports = await this.getReports();
+      if (reports.length === 0) {
+        await this.populateInitialReports();
+      }
+    } catch (e) {
+      console.error("Failed to initialize data from server", e);
+    }
   },
 
-  populateMockUsers() {
-      const users = [
-          { username: 'admin', name: '系统管理员', role: 'admin' },
-          { username: 'director', name: '王主任', role: 'district_director' },
-          { username: 'researcher1', name: '李调研员', role: 'district_researcher' },
-          { username: 'principal1', name: '赵校长', role: 'principal', school: '市北四实验' },
-          { username: 'teacher1', name: '孙老师', role: 'teacher', school: '市北四实验' },
-      ];
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+  async populateInitialReports() {
+    const mockReports = [
+      { id: 'r1', title: '2026春季全区教学进度调研报告', status: 'published', created_at: '2026-03-01', response_count: 120, category: '教学管理' },
+      { id: 'r2', title: '青岛五十三中教师满意度调查', status: 'draft', created_at: '2026-03-15', response_count: 0, category: '人力资源' },
+      { id: 'r3', title: '各校实验课开设情况抽查', status: 'closed', created_at: '2026-02-20', response_count: 450, category: '教研抽查' },
+      { id: 'r4', title: '学生课后作业负担问卷', status: 'recalled', created_at: '2026-03-18', response_count: 12, category: '教学管理' }
+    ];
+    for (const r of mockReports) {
+      await this.saveReport(r);
+    }
   },
 
-  populateInitialData() {
-    // Populate with comprehensive mock data
+  async populateMockUsers() {
+    const mockUsers = [
+        { id: 'u1', username: 'admin', password: '123', name: '系统管理员', role: 'admin' },
+        { id: 'u2', username: 'director', password: '123', name: '王主任', role: 'district_director' },
+        { id: 'u3', username: 'researcher1', password: '123', name: '李调研员', role: 'district_researcher' },
+        { id: 'u4', username: 'principal1', password: '123', name: '赵校长', role: 'principal', school: '市北四实验' },
+        { id: 'u5', username: 'teacher1', password: '123', name: '孙老师', role: 'teacher', subject: '数学', school: '市北四实验' },
+        { id: 'u6', username: 'teacher2', password: '123', name: '张老师', role: 'teacher', subject: '物理', school: '市北四实验' },
+    ];
+    for (const u of mockUsers) {
+      await this.addUser(u);
+    }
+  },
+
+  async getAllUsers() {
+    try {
+      const url = `${getApiBase()}/users`;
+      const res = await fetch(url);
+      const data = await res.json();
+      return data;
+    } catch (e) {
+      console.error('Fetch users error:', e);
+      return [];
+    }
+  },
+
+  async addUser(userData) {
+    const newUser = { id: userData.id || Date.now().toString(), ...userData };
+    await fetch(`${getApiBase()}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+    });
+    return newUser;
+  },
+
+  async updateUser(id, userData) {
+    const users = await this.getAllUsers();
+    const existing = users.find(u => u.id === id || u.id === Number(id));
+    if (existing) {
+        const updated = { ...existing, ...userData };
+        await fetch(`${getApiBase()}/users`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updated)
+        });
+        return updated;
+    }
+    return null;
+  },
+
+  async deleteUser(id) {
+    await fetch(`${getApiBase()}/users/${id}`, { method: 'DELETE' });
+  },
+
+  async populateInitialData() {
     const initialSurveys = [
         {
             id: 'mock_1',
@@ -103,139 +156,73 @@ const DataService = {
             student_thinking: '观察分析能力较好。',
             student_achievement: '理解三要素，部分学生方向感需强化。'
         },
-        {
-            id: 'mock_3',
-            school: '市北四实验',
-            grade: '初二',
-            class: '5班',
-            subject: '数学',
-            teacher: '李老师',
-            observer: '张调研员',
-            date: '2026-03-11',
-            topic: '平行四边形的判定',
-            lesson_type: 'exercise',
-            status: 'completed'
-        },
-        {
-            id: 'mock_4',
-            school: '市北四实验',
-            grade: '初二',
-            class: '7班',
-            subject: '数学',
-            teacher: '任老师',
-            observer: '王教研员',
-            date: '2026-03-10',
-            topic: '全等三角形复习',
-            lesson_type: 'review',
-            status: 'completed'
-        },
-        {
-            id: 'mock_5',
-            school: '市北四实验',
-            grade: '初二',
-            class: '9班',
-            subject: '数学',
-            teacher: '邵老师',
-            observer: '赵校长',
-            date: '2026-03-09',
-            topic: '一次函数',
-            lesson_type: 'new',
-            status: 'completed'
-        },
-        {
-            id: 'mock_6',
-            school: '市北四实验',
-            grade: '初二',
-            class: '11班',
-            subject: '数学',
-            teacher: '吕老师',
-            observer: '孙老师',
-            date: '2026-03-08',
-            topic: '数据的收集与整理',
-            lesson_type: 'experiment',
-            status: 'completed'
-        },
-        {
-            id: 'mock_7',
-            school: '市北四实验',
-            grade: '初二',
-            class: '13班',
-            subject: '数学',
-            teacher: '李老师',
-            observer: '王教研员',
-            date: '2026-03-05',
-            topic: '勾股定理',
-            lesson_type: 'new',
-            status: 'completed'
-        },
-        {
-            id: 'mock_8',
-            school: '市北四实验',
-            grade: '初二',
-            class: '1班',
-            subject: '英语',
-            teacher: '张老师',
-            observer: '李调研员',
-            date: '2026-03-04',
-            topic: 'Unit 3 Reading',
-            lesson_type: 'new',
-            status: 'completed'
-        },
-        {
-            id: 'mock_9',
-            school: '市北四实验',
-            grade: '初二',
-            class: '3班',
-            subject: '物理',
-            teacher: '王老师',
-            observer: '赵校长',
-            date: '2026-03-03',
-            topic: '力的作用',
-            lesson_type: 'experiment',
-            status: 'completed'
-        }
+        { id: 'mock_3', school: '市北四实验', grade: '初二', class: '5班', subject: '数学', teacher: '李老师', observer: '张调研员', date: '2026-03-11', topic: '平行四边形的判定', lesson_type: 'exercise', status: 'completed' },
+        { id: 'mock_4', school: '市北四实验', grade: '初二', class: '7班', subject: '数学', teacher: '任老师', observer: '王教研员', date: '2026-03-10', topic: '全等三角形复习', lesson_type: 'review', status: 'completed' },
+        { id: 'mock_5', school: '市北四实验', grade: '初二', class: '9班', subject: '数学', teacher: '邵老师', observer: '赵校长', date: '2026-03-09', topic: '一次函数', lesson_type: 'new', status: 'completed' },
+        { id: 'mock_6', school: '市北四实验', grade: '初二', class: '11班', subject: '数学', teacher: '吕老师', observer: '孙老师', date: '2026-03-08', topic: '数据的收集与整理', lesson_type: 'experiment', status: 'completed' },
+        { id: 'mock_7', school: '市北四实验', grade: '初二', class: '13班', subject: '数学', teacher: '李老师', observer: '王教研员', date: '2026-03-05', topic: '勾股定理', lesson_type: 'new', status: 'completed' },
+        { id: 'mock_8', school: '市北四实验', grade: '初二', class: '1班', subject: '英语', teacher: '张老师', observer: '李调研员', date: '2026-03-04', topic: 'Unit 3 Reading', lesson_type: 'new', status: 'completed' },
+        { id: 'mock_9', school: '市北四实验', grade: '初二', class: '3班', subject: '物理', teacher: '王老师', observer: '赵校长', date: '2026-03-03', topic: '力的作用', lesson_type: 'experiment', status: 'completed' }
     ];
-    
-    // Force update for demo purposes if survey count is low
-    const current = JSON.parse(localStorage.getItem(STORAGE_KEYS.SURVEYS) || '[]');
-    if (current.length < 5) {
-        localStorage.setItem(STORAGE_KEYS.SURVEYS, JSON.stringify(initialSurveys));
+    for (const s of initialSurveys) {
+      await this.addSurvey(s);
     }
   },
 
-  getSurveys(filters = {}) {
-      let surveys = JSON.parse(localStorage.getItem(STORAGE_KEYS.SURVEYS) || '[]');
+  async _getAllSurveysRaw() {
+    try {
+      const res = await fetch(`${getApiBase()}/surveys`);
+      return await res.json();
+    } catch (e) {
+      console.error(e);
+      return [];
+    }
+  },
+
+  async getSurveys(filters = {}) {
+      let surveys = await this._getAllSurveysRaw();
       
+      if (filters.currentUser && (filters.currentUser.role === 'teacher' || filters.currentUser.role === 'district_researcher')) {
+          surveys = surveys.filter(s => {
+              // If it's explicitly assigned to them
+              if (s.publishConfig && s.publishConfig.target) {
+                  const target = s.publishConfig.target;
+                  if (target.type === 'all') return true;
+                  
+                  const roleMap = {
+                    'teacher': '教师',
+                    'district_researcher': '区调研员'
+                  };
+                  const roleName = roleMap[filters.currentUser.role];
+
+                  if (target.type === 'role' && target.roles && target.roles.includes(roleName)) return true;
+                  if (target.type === 'school' && target.schools && target.schools.includes(filters.currentUser.school)) return true;
+                  if (target.type === 'user' && target.userIds && target.userIds.includes(filters.currentUser.id)) return true;
+              }
+              
+              // Also if they are the observer, they can see it (in case they somehow created it or are marked as observer)
+              if (s.observer === filters.currentUser.name) return true;
+              
+              return false;
+          });
+      }
+
       if (filters.school) surveys = surveys.filter(s => s.school === filters.school);
       if (filters.subject) surveys = surveys.filter(s => s.subject === filters.subject);
       if (filters.observer) surveys = surveys.filter(s => s.observer === filters.observer);
       
-      // Time Span Filter
       if (filters.timeSpan && filters.timeSpan !== 'all') {
           const now = new Date();
           let startDate = new Date();
           
           switch (filters.timeSpan) {
-              case 'week':
-                  startDate.setDate(now.getDate() - 7);
-                  break;
-              case 'month':
-                  startDate.setDate(now.getDate() - 30);
-                  break;
-              case 'three_months':
-                  startDate.setMonth(now.getMonth() - 3);
-                  break;
-              case 'semester': // Approx 6 months
-                  startDate.setMonth(now.getMonth() - 6);
-                  break;
-              case 'year':
-                  startDate.setFullYear(now.getFullYear() - 1);
-                  break;
-              case 'three_years':
-                  startDate.setFullYear(now.getFullYear() - 3);
-                  break;
-              default:
-                  break;
+              case 'week': startDate.setDate(now.getDate() - 7); break;
+              case 'month': startDate.setDate(now.getDate() - 30); break;
+              case 'three_months': startDate.setMonth(now.getMonth() - 3); break;
+              case 'semester': startDate.setMonth(now.getMonth() - 6); break;
+              case 'year': startDate.setFullYear(now.getFullYear() - 1); break;
+              case 'three_years': startDate.setFullYear(now.getFullYear() - 3); break;
+              default: break;
           }
 
           surveys = surveys.filter(s => {
@@ -248,77 +235,159 @@ const DataService = {
       return surveys.sort((a, b) => new Date(b.date) - new Date(a.date));
   },
 
-  getSurveyById(id) {
-      const surveys = JSON.parse(localStorage.getItem(STORAGE_KEYS.SURVEYS) || '[]');
+  async getSurveyById(id) {
+      const surveys = await this._getAllSurveysRaw();
       return surveys.find(s => s.id === id);
   },
 
-  addSurvey(surveyData) {
-      const surveys = JSON.parse(localStorage.getItem(STORAGE_KEYS.SURVEYS) || '[]');
-      
-      // If editing existing survey (check if ID exists and is valid)
-      if (surveyData.id) {
-          const index = surveys.findIndex(s => s.id === surveyData.id);
-          if (index !== -1) {
-              surveys[index] = { ...surveys[index], ...surveyData };
-              localStorage.setItem(STORAGE_KEYS.SURVEYS, JSON.stringify(surveys));
-              return surveys[index];
-          }
-      }
-
+  async addSurvey(surveyData) {
       const newSurvey = {
-          id: Date.now().toString(),
-          createdAt: new Date().toISOString(),
-          status: 'completed',
+          id: surveyData.id || Date.now().toString(),
+          createdAt: surveyData.createdAt || new Date().toISOString(),
+          status: surveyData.status || 'completed',
           ...surveyData
       };
-      surveys.unshift(newSurvey);
-      localStorage.setItem(STORAGE_KEYS.SURVEYS, JSON.stringify(surveys));
+      await fetch(`${getApiBase()}/surveys`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newSurvey)
+      });
       return newSurvey;
   },
 
-  deleteSurvey(id) {
-      let surveys = JSON.parse(localStorage.getItem(STORAGE_KEYS.SURVEYS) || '[]');
-      surveys = surveys.filter(s => s.id !== id);
-      localStorage.setItem(STORAGE_KEYS.SURVEYS, JSON.stringify(surveys));
+  async deleteSurvey(id) {
+      await fetch(`${getApiBase()}/surveys/${id}`, { method: 'DELETE' });
   },
 
-  // Target Management
-  getTargets() {
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.TARGETS) || '[]');
-  },
+  async getReports(filters = {}) {
+    try {
+      const res = await fetch(`${getApiBase()}/reports`);
+      let reports = await res.json();
+      
+      if (filters.currentUser && (filters.currentUser.role === 'teacher' || filters.currentUser.role === 'district_researcher')) {
+          reports = reports.filter(r => {
+              if (r.publishConfig && r.publishConfig.target) {
+                  const target = r.publishConfig.target;
+                  if (target.type === 'all') return true;
+                  
+                  const roleMap = {
+                    'teacher': '教师',
+                    'district_researcher': '区调研员'
+                  };
+                  const roleName = roleMap[filters.currentUser.role];
 
-  setTarget(targetData) {
-    let targets = this.getTargets();
-    // Check if target exists for this user/role, update or add
-    const index = targets.findIndex(t => t.userId === targetData.userId);
-    if (index !== -1) {
-      targets[index] = { ...targets[index], ...targetData, updatedAt: new Date().toISOString() };
-    } else {
-      targets.push({ 
-        id: Date.now().toString(), 
-        createdAt: new Date().toISOString(), 
-        ...targetData 
-      });
+                  if (target.type === 'role' && target.roles && target.roles.includes(roleName)) return true;
+                  if (target.type === 'school' && target.schools && target.schools.includes(filters.currentUser.school)) return true;
+                  if (target.type === 'user' && target.userIds && target.userIds.includes(filters.currentUser.id)) return true;
+              }
+              return false;
+          });
+      }
+      return reports;
+    } catch (e) {
+      console.error(e);
+      return [];
     }
-    localStorage.setItem(STORAGE_KEYS.TARGETS, JSON.stringify(targets));
   },
 
-  getUsersByRole(role) {
-     const users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]');
+  async saveReport(reportData) {
+    if (!reportData.id) {
+        reportData.id = Date.now().toString();
+    }
+    await fetch(`${getApiBase()}/reports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reportData)
+    });
+    return reportData;
+  },
+
+  async deleteReport(id) {
+    await fetch(`${getApiBase()}/reports/${id}`, { method: 'DELETE' });
+  },
+
+  async getResponses() {
+    try {
+      const res = await fetch(`${getApiBase()}/responses`);
+      return await res.json();
+    } catch (e) {
+      console.error(e);
+      return [];
+    }
+  },
+
+  async addResponse(responseData) {
+    if (!responseData.id) {
+        responseData.id = Date.now().toString();
+    }
+    await fetch(`${getApiBase()}/responses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(responseData)
+    });
+    return responseData;
+  },
+
+  async restoreData(data) {
+    const res = await fetch(`${getApiBase()}/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      throw new Error('Restore failed');
+    }
+    return res.json();
+  },
+
+  async getTargets() {
+    try {
+      const res = await fetch(`${getApiBase()}/targets`);
+      return await res.json();
+    } catch (e) {
+      console.error(e);
+      return [];
+    }
+  },
+
+  async setTarget(targetData) {
+    const targets = await this.getTargets();
+    const existing = targets.find(t => t.userId === targetData.userId);
+    const dataToSave = existing 
+        ? { ...existing, ...targetData, updatedAt: new Date().toISOString() }
+        : { id: Date.now().toString(), createdAt: new Date().toISOString(), ...targetData };
+    
+    await fetch(`${getApiBase()}/targets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataToSave)
+    });
+  },
+
+  async getUsersByRole(role) {
+     const users = await this.getAllUsers();
      return users.filter(u => u.role === role);
   },
 
-  // Stats for Dashboard
-  getDashboardStats(filters = {}) {
-      // Get filtered surveys for stats
-      const surveys = this.getSurveys(filters);
+  async getDashboardStats(filters = {}) {
+      // Remove currentUser from filters to get global stats for managers
+      // The Dashboard component should only pass currentUser if it wants filtered stats.
+      // But the user requested "数据看板中的所有数据是根据总数据统计的" for managers.
+      // Actually, Dashboard currently passes currentUser for everyone.
+      // Let's modify this to ignore currentUser for managers.
+      const isManager = filters.currentUser && ['admin', 'district_director', 'principal'].includes(filters.currentUser.role);
       
-      // Get ALL surveys to populate filter dropdowns (unfiltered list)
-      const allSurveys = JSON.parse(localStorage.getItem(STORAGE_KEYS.SURVEYS) || '[]');
-      const allObservers = [...new Set(allSurveys.map(s => s.observer).filter(Boolean))];
-      const allSchools = [...new Set(allSurveys.map(s => s.school).filter(Boolean))];
-      const allSubjects = [...new Set(allSurveys.map(s => s.subject).filter(Boolean))];
+      const statsFilters = { ...filters };
+      if (isManager) {
+          delete statsFilters.currentUser; // Managers see all data
+      }
+
+      const surveys = await this.getSurveys(statsFilters);
+      const accessibleSurveys = await this.getSurveys({ currentUser: statsFilters.currentUser });
+      
+      const allObservers = [...new Set(accessibleSurveys.map(s => s.observer).filter(Boolean))];
+      const allSchools = [...new Set(accessibleSurveys.map(s => s.school).filter(Boolean))];
+      const allSubjects = [...new Set(accessibleSurveys.map(s => s.subject).filter(Boolean))];
 
       const schoolSet = new Set(surveys.map(s => s.school));
       
@@ -333,7 +402,6 @@ const DataService = {
         count: subjectCounts[key]
       }));
 
-      // Calculate Monthly Stats (Last 6 months)
       const monthlyStats = {
           labels: [],
           data: []
@@ -357,7 +425,7 @@ const DataService = {
           schoolCount: schoolSet.size,
           totalSurveys: surveys.length,
           completedSurveys: surveys.filter(s => s.status === 'completed').length,
-          coverage: schoolSet.size > 0 ? Math.round((schoolSet.size / 6) * 100) : 0, // Mock total schools = 6
+          coverage: schoolSet.size > 0 ? Math.round((schoolSet.size / 6) * 100) : 0,
           subjectData: data,
           monthlyStats,
           allObservers,

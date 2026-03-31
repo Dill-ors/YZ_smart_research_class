@@ -1,0 +1,102 @@
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const cors = require('cors');
+const path = require('path');
+
+const app = express();
+const port = 3000;
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+
+const dbPath = path.resolve(__dirname, 'database.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    console.error('Error opening database', err);
+  } else {
+    console.log('Connected to SQLite database.');
+    initDb();
+  }
+});
+
+function initDb() {
+  db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS surveys (id TEXT PRIMARY KEY, data TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, data TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS targets (id TEXT PRIMARY KEY, data TEXT)`);
+  });
+}
+
+// Helper to handle simple CRUD for a table
+const setupTableRoutes = (tableName) => {
+  // GET all
+  app.get(`/api/${tableName}`, (req, res) => {
+    db.all(`SELECT * FROM ${tableName}`, [], (err, rows) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      try {
+        const data = rows.map(row => JSON.parse(row.data));
+        res.json(data);
+      } catch (e) {
+        res.status(500).json({ error: 'Failed to parse data' });
+      }
+    });
+  });
+
+  // POST (Insert or Update)
+  app.post(`/api/${tableName}`, (req, res) => {
+    const item = req.body;
+    if (!item.id) {
+        return res.status(400).json({ error: 'Missing id field' });
+    }
+    const idStr = item.id.toString();
+    const dataStr = JSON.stringify(item);
+
+    db.get(`SELECT id FROM ${tableName} WHERE id = ?`, [idStr], (err, row) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      if (row) {
+        db.run(`UPDATE ${tableName} SET data = ? WHERE id = ?`, [dataStr, idStr], function(err) {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ message: 'updated', item });
+        });
+      } else {
+        db.run(`INSERT INTO ${tableName} (id, data) VALUES (?, ?)`, [idStr, dataStr], function(err) {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ message: 'inserted', item });
+        });
+      }
+    });
+  });
+
+  // DELETE
+  app.delete(`/api/${tableName}/:id`, (req, res) => {
+    const id = req.params.id;
+    db.run(`DELETE FROM ${tableName} WHERE id = ?`, id, function(err) {
+      if (err) {
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      res.json({ message: 'deleted', changes: this.changes });
+    });
+  });
+};
+
+setupTableRoutes('surveys');
+setupTableRoutes('users');
+setupTableRoutes('targets');
+setupTableRoutes('reports');
+setupTableRoutes('responses');
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Server is running on http://0.0.0.0:${port}`);
+  console.log(`Local network users can access via http://<YOUR_IP>:${port}`);
+});

@@ -256,6 +256,7 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
                     isEditMode={false}
                     userRole={user?.role}
                     currentUserId={user?.username}
+                    currentUser={user}
                     value={answers[q.id]}
                     onChange={(val) => setAnswers({ ...answers, [q.id]: val })}
                     mode={mode}

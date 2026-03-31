@@ -53,7 +53,7 @@ const MainLayout = () => {
         )}
       >
         <div className="flex items-center justify-between h-16 px-6 bg-blue-600 text-white">
-          <span className="text-xl font-semibold">听课记录系统</span>
+          <span className="text-xl font-semibold">听评课记录系统</span>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
             <X className="w-6 h-6" />
           </button>
@@ -99,7 +99,7 @@ const MainLayout = () => {
           <button onClick={() => setSidebarOpen(true)} className="text-gray-500">
             <Menu className="w-6 h-6" />
           </button>
-          <span className="text-lg font-semibold text-gray-900">听课记录系统</span>
+          <span className="text-lg font-semibold text-gray-900">听评课记录系统</span>
           <div className="w-6" /> {/* Spacer */}
         </header>
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 p-6">

@@ -80,7 +80,7 @@ const UploadButton = ({ onUploadSuccess, type = 'upload' }) => {
   );
 };
 
-const ObservationForm = () => {
+const ObservationForm = ({ mode = 'edit' }) => {
   const navigate = useNavigate();
   const { id } = useParams();
   const [formData, setFormData] = useState({
@@ -110,14 +110,15 @@ const ObservationForm = () => {
 
   useEffect(() => {
     if (id) {
-      DataService.init();
-      const survey = DataService.getSurveyById(id);
-      if (survey) {
-        setFormData(survey);
-      } else {
-        alert('记录不存在');
-        navigate('/observations');
-      }
+      DataService.init().then(async () => {
+        const survey = await DataService.getSurveyById(id);
+        if (survey) {
+          setFormData(survey);
+        } else {
+          alert('记录不存在');
+          navigate('/observations');
+        }
+      });
     }
   }, [id, navigate]);
 
@@ -231,9 +232,19 @@ const ObservationForm = () => {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    DataService.addSurvey(formData);
+    
+    // Automatically set the observer to the current user's name if they are a teacher or researcher
+    const userStr = localStorage.getItem('currentUser');
+    const user = userStr ? JSON.parse(userStr) : null;
+    const finalData = { ...formData };
+    
+    if (user && (user.role === 'teacher' || user.role === 'district_researcher')) {
+        finalData.observer = user.name;
+    }
+
+    await DataService.addSurvey(finalData);
     navigate('/observations');
   };
 
@@ -260,6 +271,7 @@ const ObservationForm = () => {
                 value={formData.survey_mode}
                 onChange={handleChange}
                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
+                disabled={mode === 'fill'}
               >
                 <option value="集中调研">集中调研</option>
                 <option value="个别调研">个别调研</option>
@@ -273,6 +285,7 @@ const ObservationForm = () => {
                 onChange={handleChange}
                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
                 required
+                disabled={mode === 'fill'}
               >
                 <option value="">请选择学校</option>
                 {Object.keys(SCHOOL_DATA).map(s => <option key={s} value={s}>{s}</option>)}
@@ -286,7 +299,7 @@ const ObservationForm = () => {
                 onChange={handleChange}
                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
                 required
-                disabled={!formData.school}
+                disabled={!formData.school || mode === 'fill'}
               >
                 <option value="">请选择年级</option>
                 {availableGrades.map(g => <option key={g} value={g}>{g}</option>)}
@@ -300,7 +313,7 @@ const ObservationForm = () => {
                 onChange={handleChange}
                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
                 required
-                disabled={!formData.grade}
+                disabled={!formData.grade || mode === 'fill'}
               >
                 <option value="">请选择班级</option>
                 {availableClasses.map(c => <option key={c} value={c}>{c}</option>)}
@@ -314,7 +327,7 @@ const ObservationForm = () => {
                 onChange={handleChange}
                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
                 required
-                disabled={!formData.class}
+                disabled={!formData.class || mode === 'fill'}
               >
                 <option value="">请选择学科</option>
                 {availableSubjects.map(s => <option key={s} value={s}>{s}</option>)}
@@ -330,7 +343,7 @@ const ObservationForm = () => {
                 placeholder="请输入教师姓名"
                 className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                 required
-                disabled={!formData.subject}
+                disabled={!formData.subject || mode === 'fill'}
               />
             </div>
             <div>
@@ -342,6 +355,7 @@ const ObservationForm = () => {
                 onChange={handleChange}
                 className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                 required
+                disabled={mode === 'fill'}
               />
             </div>
             <div className="md:col-span-2">
@@ -353,6 +367,7 @@ const ObservationForm = () => {
                 onChange={handleChange}
                 className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                 required
+                disabled={mode === 'fill'}
               />
             </div>
             <div>
@@ -362,6 +377,7 @@ const ObservationForm = () => {
                 value={formData.lesson_type}
                 onChange={handleChange}
                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
+                disabled={mode === 'fill'}
               >
                 <option value="new">新授课</option>
                 <option value="review">复习课</option>
@@ -377,14 +393,16 @@ const ObservationForm = () => {
         <section>
           <div className="flex justify-between items-center mb-4 border-l-4 border-blue-500 pl-2">
             <h4 className="text-md font-medium text-gray-900">2. 教学过程实录与观察</h4>
-            <button
-              type="button"
-              onClick={addStep}
-              className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              添加环节
-            </button>
+            {mode !== 'fill' && (
+              <button
+                type="button"
+                onClick={addStep}
+                className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                添加环节
+              </button>
+            )}
           </div>
           <div className="space-y-4">
             {formData.processSteps.map((step, index) => (
@@ -396,6 +414,7 @@ const ObservationForm = () => {
                     value={step.type}
                     onChange={(e) => handleStepChange(index, 'type', e.target.value)}
                     className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                    disabled={mode === 'fill'}
                   >
                     <option value="情景导入">情景导入</option>
                     <option value="新知探究">新知探究</option>
@@ -409,6 +428,7 @@ const ObservationForm = () => {
                     value={step.time}
                     onChange={(e) => handleStepChange(index, 'time', e.target.value)}
                     className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                    disabled={mode === 'fill'}
                   />
                 </div>
 
@@ -419,20 +439,23 @@ const ObservationForm = () => {
                     value={step.content}
                     onChange={(e) => handleStepChange(index, 'content', e.target.value)}
                     className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2 h-full"
+                    disabled={mode === 'fill'}
                   />
                 </div>
                 
                 <div className="flex flex-col gap-2 pt-0">
-                  <button
-                    type="button"
-                    onClick={() => removeStep(index)}
-                    className="text-red-500 hover:text-red-700 p-1.5 border border-transparent hover:bg-red-50 rounded text-center"
-                    title="删除环节"
-                  >
-                    <Trash2 className="h-5 w-5 mx-auto" />
-                  </button>
-                  <UploadButton type="upload" onUploadSuccess={handleUploadSuccess(`processSteps[${index}].content`)} />
-                  <UploadButton type="camera" onUploadSuccess={handleUploadSuccess(`processSteps[${index}].content`)} />
+                  {mode !== 'fill' && (
+                    <button
+                      type="button"
+                      onClick={() => removeStep(index)}
+                      className="text-red-500 hover:text-red-700 p-1.5 border border-transparent hover:bg-red-50 rounded text-center"
+                      title="删除环节"
+                    >
+                      <Trash2 className="h-5 w-5 mx-auto" />
+                    </button>
+                  )}
+                  {mode !== 'fill' && <UploadButton type="upload" onUploadSuccess={handleUploadSuccess(`processSteps[${index}].content`)} />}
+                  {mode !== 'fill' && <UploadButton type="camera" onUploadSuccess={handleUploadSuccess(`processSteps[${index}].content`)} />}
                 </div>
               </div>
             ))}
@@ -453,132 +476,147 @@ const ObservationForm = () => {
               </div>
               <div className="grid grid-cols-1 gap-4">
                 {[
-                  { key: 'teacher_target', label: '教学目标 (明确/具体/落实)' },
-                  { key: 'teacher_content', label: '教学内容 (科学/重难点/教材加工)' },
-                  { key: 'teacher_method', label: '教学方法 (启发/互动/多媒体)' },
-                  { key: 'teacher_org', label: '教学组织 (氛围/调控)' },
-                  { key: 'teacher_literacy', label: '教师素养 (语言/教态/板书/评价)' }
-                ].map((item) => (
-                  <div key={item.key}>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">
-                      {item.label}
-                    </label>
-                    <textarea
-                      name={item.key}
-                      rows={2}
-                      value={formData[item.key]}
-                      onChange={handleChange}
-                      className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <h5 className="text-sm font-medium text-gray-900">B. 学生学习状态观察</h5>
-                <div className="flex gap-2">
-                  <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('student_observation_all')} />
-                  <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('student_observation_all')} />
+                    { key: 'teacher_target', label: '教学目标 (明确/具体/落实)' },
+                    { key: 'teacher_content', label: '教学内容 (科学/重难点/教材加工)' },
+                    { key: 'teacher_method', label: '教学方法 (启发/互动/多媒体)' },
+                    { key: 'teacher_org', label: '教学组织 (氛围/调控)' },
+                    { key: 'teacher_literacy', label: '教师素养 (语言/教态/板书/评价)' }
+                  ].map((item) => (
+                    <div key={item.key}>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        {item.label}
+                      </label>
+                      <textarea
+                        name={item.key}
+                        rows={2}
+                        value={formData[item.key]}
+                        onChange={handleChange}
+                        className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                        disabled={mode === 'fill'}
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-4">
-                {[
-                  { key: 'student_participation', label: '参与度' },
-                  { key: 'student_thinking', label: '思维状态' },
-                  { key: 'student_achievement', label: '目标达成' }
-                ].map((item) => (
-                  <div key={item.key}>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">
-                      {item.label}
-                    </label>
-                    <textarea
-                      name={item.key}
-                      rows={2}
-                      value={formData[item.key]}
-                      onChange={handleChange}
-                      className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                    />
-                  </div>
-                ))}
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <h5 className="text-sm font-medium text-gray-900">B. 学生学习状态观察</h5>
+                  {mode !== 'fill' && (
+                    <div className="flex gap-2">
+                      <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('student_observation_all')} />
+                      <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('student_observation_all')} />
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 gap-4">
+                  {[
+                    { key: 'student_participation', label: '参与度' },
+                    { key: 'student_thinking', label: '思维状态' },
+                    { key: 'student_achievement', label: '目标达成' }
+                  ].map((item) => (
+                    <div key={item.key}>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        {item.label}
+                      </label>
+                      <textarea
+                        name={item.key}
+                        rows={2}
+                        value={formData[item.key]}
+                        onChange={handleChange}
+                        className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                        disabled={mode === 'fill'}
+                      />
+                    </div>
+                  ))}
               </div>
             </div>
           </div>
         </section>
 
         {/* 4. Evaluation */}
-        <section>
-          <h4 className="text-md font-medium text-gray-900 mb-4 border-l-4 border-blue-500 pl-2">4. 评价与总结</h4>
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-sm font-medium text-gray-700">课堂特色与亮点</label>
-                <div className="flex gap-2">
-                  <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('highlights')} />
-                  <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('highlights')} />
+          <section>
+            <h4 className="text-md font-medium text-gray-900 mb-4 border-l-4 border-blue-500 pl-2">4. 评价与总结</h4>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-sm font-medium text-gray-700">课堂特色与亮点</label>
+                  {mode !== 'fill' && (
+                    <div className="flex gap-2">
+                      <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('highlights')} />
+                      <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('highlights')} />
+                    </div>
+                  )}
                 </div>
+                <textarea
+                  name="highlights"
+                  rows={4}
+                  value={formData.highlights}
+                  onChange={handleChange}
+                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                  disabled={mode === 'fill'}
+                />
               </div>
-              <textarea
-                name="highlights"
-                rows={4}
-                value={formData.highlights}
-                onChange={handleChange}
-                className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-              />
-            </div>
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-sm font-medium text-gray-700">问题与改进建议</label>
-                <div className="flex gap-2">
-                  <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
-                  <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-sm font-medium text-gray-700">问题与改进建议</label>
+                  {mode !== 'fill' && (
+                    <div className="flex gap-2">
+                      <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
+                      <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
+                    </div>
+                  )}
                 </div>
+                <textarea
+                  name="problems_suggestions"
+                  rows={4}
+                  value={formData.problems_suggestions}
+                  onChange={handleChange}
+                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                  disabled={mode === 'fill'}
+                />
               </div>
-              <textarea
-                name="problems_suggestions"
-                rows={4}
-                value={formData.problems_suggestions}
-                onChange={handleChange}
-                className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-              />
-            </div>
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-sm font-medium text-gray-700">总体评价</label>
-                <div className="flex gap-2">
-                  <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('overall_evaluation')} />
-                  <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('overall_evaluation')} />
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-sm font-medium text-gray-700">总体评价</label>
+                  {mode !== 'fill' && (
+                    <div className="flex gap-2">
+                      <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('overall_evaluation')} />
+                      <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('overall_evaluation')} />
+                    </div>
+                  )}
                 </div>
+                <textarea
+                  name="overall_evaluation"
+                  rows={4}
+                  value={formData.overall_evaluation}
+                  onChange={handleChange}
+                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                  disabled={mode === 'fill'}
+                />
               </div>
-              <textarea
-                name="overall_evaluation"
-                rows={4}
-                value={formData.overall_evaluation}
-                onChange={handleChange}
-                className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-              />
             </div>
-          </div>
-        </section>
+          </section>
 
-        <div className="pt-5 border-t border-gray-200">
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => navigate('/observations')}
-              className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <Save className="h-5 w-5 mr-2" />
-              保存记录
-            </button>
+          <div className="pt-5 border-t border-gray-200">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => navigate('/observations')}
+                className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                {mode === 'fill' ? '返回' : '取消'}
+              </button>
+              {mode !== 'fill' && (
+                <button
+                  type="submit"
+                  className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  <Save className="h-5 w-5 mr-2" />
+                  保存记录
+                </button>
+              )}
+            </div>
           </div>
-        </div>
       </form>
     </div>
   );

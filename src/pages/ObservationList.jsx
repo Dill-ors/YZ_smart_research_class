@@ -8,6 +8,7 @@ import SurveyPublishModal from '../components/SurveyPublishModal';
 
 const ObservationList = () => {
   const { user } = useAuth();
+  const hideObserverColumn = user?.role === 'teacher';
   const [surveys, setSurveys] = useState([]);
   const [filters, setFilters] = useState({ 
     school: '', 
@@ -21,13 +22,15 @@ const ObservationList = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    DataService.init();
-    loadData();
-    setCurrentPage(1); // Reset to first page when filters change
+    DataService.init().then(() => {
+      loadData();
+      setCurrentPage(1); // Reset to first page when filters change
+    });
   }, [filters]);
 
-  const loadData = () => {
-    const data = DataService.getSurveys(filters);
+  const loadData = async () => {
+    // Inject current user into filters to restrict visibility if needed
+    const data = await DataService.getSurveys({ ...filters, currentUser: user });
     setSurveys(data);
   };
 
@@ -39,9 +42,9 @@ const ObservationList = () => {
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (window.confirm('确定要删除这条记录吗？')) {
-      DataService.deleteSurvey(id);
+      await DataService.deleteSurvey(id);
       loadData();
     }
   };
@@ -54,10 +57,10 @@ const ObservationList = () => {
     navigate(`/observations/fill/${id}`);
   };
 
-  const handlePublish = (publishConfig) => {
+  const handlePublish = async (publishConfig) => {
     // 假设更新问卷状态
     const surveyToUpdate = { ...publishModalSurvey, status: 'published', publishConfig };
-    DataService.addSurvey(surveyToUpdate); // addSurvey也用作更新
+    await DataService.addSurvey(surveyToUpdate); // addSurvey也用作更新
     setPublishModalSurvey(null);
     loadData();
     alert('发布成功！');
@@ -172,9 +175,11 @@ const ObservationList = () => {
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 学科
               </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                教研员/听课人
-              </th>
+              {!hideObserverColumn && (
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  教研员/听课人
+                </th>
+              )}
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 学校
               </th>
@@ -198,9 +203,11 @@ const ObservationList = () => {
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   {survey.subject}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {survey.observer}
-                </td>
+                {!hideObserverColumn && (
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {survey.observer}
+                  </td>
+                )}
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {survey.school}
                 </td>
@@ -230,7 +237,7 @@ const ObservationList = () => {
                       <Send className="h-5 w-5" />
                     </button>
                   )}
-                  {hasPermission(user, 'canModifyStructure') && (
+                  {(hasPermission(user, 'canModifyStructure') || user.role === 'teacher' || user.role === 'district_researcher') && (
                     <button 
                       onClick={() => handleEdit(survey.id)} 
                       className="text-indigo-600 hover:text-indigo-900 mr-3"

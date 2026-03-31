@@ -56,6 +56,8 @@ export const QUESTION_TYPES = [
     defaultProps: { 
       label: '矩阵题标题', 
       mode: 'radio', // radio, checkbox, input
+      topLeftLabel: '', // 第一行第一列的属性标签
+      allowAddRows: false, // 允许填报者动态添加行
       rows: ['行选项 1', '行选项 2'], 
       cols: ['列选项 1', '列选项 2', '列选项 3'],
       required: true
@@ -102,6 +104,16 @@ export const QUESTION_TYPES = [
       label: '填空题标题', 
       placeholder: '请输入内容...',
       layout: 'vertical',
+      required: true
+    } 
+  },
+  { 
+    type: 'lesson_record', 
+    label: '听课记录', 
+    icon: List, 
+    defaultProps: { 
+      label: '课堂听课记录', 
+      description: '请填写您的听课记录',
       required: true
     } 
   },

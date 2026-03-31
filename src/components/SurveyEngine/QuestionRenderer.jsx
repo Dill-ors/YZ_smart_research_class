@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GripVertical, Trash2, Copy, Star, Upload as UploadIcon, ChevronUp, ChevronDown, MessageSquare } from 'lucide-react';
+import { GripVertical, Trash2, Copy, Star, Upload as UploadIcon, ChevronUp, ChevronDown, MessageSquare, Plus } from 'lucide-react';
 
 export default function QuestionRenderer({ 
   question, 
@@ -13,6 +13,7 @@ export default function QuestionRenderer({
   onMoveDown,
   userRole,
   currentUserId,
+  currentUser,
   value,
   onChange,
   mode,
@@ -44,8 +45,137 @@ export default function QuestionRenderer({
           </div>
         );
 
+      case 'lesson_record': {
+        const records = Array.isArray(value) ? value : [{ session: '第一节', grade: '', topic: '', teacher: '', advantages: '', problems: '' }];
+        
+        const handleRecordChange = (index, field, val) => {
+          if (!onChange) return;
+          const newRecords = [...records];
+          newRecords[index] = { ...newRecords[index], [field]: val };
+          onChange(newRecords);
+        };
+
+        const addRecord = () => {
+          if (!onChange) return;
+          const nextSessionMap = { '第一节': '第二节', '第二节': '第三节', '第三节': '第四节', '第四节': '第五节', '第五节': '第六节' };
+          const lastSession = records[records.length - 1]?.session || '第一节';
+          const nextSession = nextSessionMap[lastSession] || `第${records.length + 1}节`;
+          onChange([...records, { session: nextSession, grade: '', topic: '', teacher: '', advantages: '', problems: '' }]);
+        };
+
+        const removeRecord = (index) => {
+          if (!onChange) return;
+          const newRecords = records.filter((_, i) => i !== index);
+          if (newRecords.length === 0) {
+            newRecords.push({ session: '第一节', grade: '', topic: '', teacher: '', advantages: '', problems: '' });
+          }
+          onChange(newRecords);
+        };
+
+        const subjectTitle = currentUser?.subject ? `${currentUser.subject}学科` : '学科';
+
+        return (
+          <div className="space-y-6">
+            <h3 className="font-bold text-lg text-gray-800 border-b pb-2">
+              (一) {subjectTitle}
+            </h3>
+            
+            {records.map((record, idx) => (
+              <div key={idx} className="bg-gray-50 p-4 rounded-lg border border-gray-200 relative group">
+                {(!isDisabled || isEditMode) && records.length > 1 && (
+                  <button 
+                    onClick={() => removeRecord(idx)}
+                    className="absolute top-4 right-4 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="删除该节记录"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                )}
+                
+                <div className="flex flex-wrap items-center gap-3 mb-4 pr-8">
+                  <div className="font-medium text-gray-700 w-16">
+                    {idx + 1}. <input type="text" value={record.session} onChange={(e) => handleRecordChange(idx, 'session', e.target.value)} disabled={isDisabled} className="w-16 bg-transparent border-b border-gray-300 focus:border-blue-500 outline-none text-center px-1" />：
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="年级" 
+                      value={record.grade} 
+                      onChange={(e) => handleRecordChange(idx, 'grade', e.target.value)}
+                      disabled={isDisabled}
+                      className="w-20 border border-gray-300 rounded px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                    />
+                  </div>
+                  
+                  <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                    <span className="text-gray-600 text-sm whitespace-nowrap">课题</span>
+                    <input 
+                      type="text" 
+                      placeholder="《课题名称》" 
+                      value={record.topic} 
+                      onChange={(e) => handleRecordChange(idx, 'topic', e.target.value)}
+                      disabled={isDisabled}
+                      className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                    />
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-600 text-sm whitespace-nowrap">执教教师：</span>
+                    <input 
+                      type="text" 
+                      placeholder="教师姓名" 
+                      value={record.teacher} 
+                      onChange={(e) => handleRecordChange(idx, 'teacher', e.target.value)}
+                      disabled={isDisabled}
+                      className="w-24 border border-gray-300 rounded px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3 ml-6">
+                  <div>
+                    <div className="text-gray-700 font-medium mb-1">(1) 主要优点：</div>
+                    <textarea 
+                      value={record.advantages} 
+                      onChange={(e) => handleRecordChange(idx, 'advantages', e.target.value)}
+                      disabled={isDisabled}
+                      rows={3}
+                      placeholder="请输入主要优点..."
+                      className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 resize-y"
+                    />
+                  </div>
+                  <div>
+                    <div className="text-gray-700 font-medium mb-1">(2) 存在问题：</div>
+                    <textarea 
+                      value={record.problems} 
+                      onChange={(e) => handleRecordChange(idx, 'problems', e.target.value)}
+                      disabled={isDisabled}
+                      rows={3}
+                      placeholder="请输入存在问题..."
+                      className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 resize-y"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {(!isDisabled || isEditMode) && (
+              <button 
+                type="button"
+                onClick={addRecord}
+                className="flex items-center justify-center w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors"
+              >
+                <Plus className="w-5 h-5 mr-2" />
+                添加下一节记录
+              </button>
+            )}
+          </div>
+        );
+      }
+
       case 'radio':
-      case 'checkbox':
+      case 'checkbox': {
         const InputType = type === 'radio' ? 'radio' : 'checkbox';
         const isHorizontal = props.layout === 'horizontal';
         
@@ -83,6 +213,7 @@ export default function QuestionRenderer({
             })}
           </div>
         );
+      }
 
       case 'matrix':
         const matrixResponses = (mode === 'board' || mode === 'fill') ? responses : [];
@@ -123,7 +254,7 @@ export default function QuestionRenderer({
             <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md shadow-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 w-32"></th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 w-32">{props.topLeftLabel || ''}</th>
                   {(props.cols || []).map((col, cIdx) => (
                     <th key={cIdx} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                       {col}
@@ -156,6 +287,17 @@ export default function QuestionRenderer({
                         if (!onChange) return;
                         const currentCells = (value && value.cells) ? { ...value.cells } : {};
                         currentCells[cellKey] = newVal;
+                        
+                        if (currentUser?.subject) {
+                          const subjectColIdx = (props.cols || []).findIndex(c => c.includes('学科') || c.includes('科目'));
+                          if (subjectColIdx !== -1) {
+                            const subjKey = `${rowName}_${subjectColIdx}`;
+                            if (!currentCells[subjKey]) {
+                              currentCells[subjKey] = currentUser.subject;
+                            }
+                          }
+                        }
+
                         onChange({ ...(value || {}), cells: currentCells });
                       };
 
@@ -166,6 +308,17 @@ export default function QuestionRenderer({
                           delete currentCells[`${rowName}_${c}`];
                         });
                         currentCells[cellKey] = true;
+                        
+                        if (currentUser?.subject) {
+                          const subjectColIdx = (props.cols || []).findIndex(c => c.includes('学科') || c.includes('科目'));
+                          if (subjectColIdx !== -1) {
+                            const subjKey = `${rowName}_${subjectColIdx}`;
+                            if (!currentCells[subjKey]) {
+                              currentCells[subjKey] = currentUser.subject;
+                            }
+                          }
+                        }
+
                         onChange({ ...(value || {}), cells: currentCells });
                       };
 
@@ -209,22 +362,49 @@ export default function QuestionRenderer({
               </tbody>
             </table>
             
-            {!isDisabled && canFill && mode === 'fill' && (
+            {!isDisabled && canFill && (
               <div className="mt-3 flex justify-start">
                 <button 
                   type="button"
                   onClick={() => {
-                    const rowName = prompt("请输入新行名称:");
-                    if (rowName && !allRows.includes(rowName)) {
+                    let baseName = currentUser?.subject || currentUser?.name || "新行";
+                    let defaultName = baseName;
+                    let counter = 1;
+                    while(allRows.includes(defaultName)) {
+                       defaultName = `${baseName} ${counter}`;
+                       counter++;
+                    }
+                    
+                    const rowName = prompt("请输入新行名称:", defaultName);
+                    
+                    if (rowName) {
+                      if (allRows.includes(rowName)) {
+                        alert("行名称已存在或无效！");
+                        return;
+                      }
+                      
                       const currentAdded = (value && value.addedRows) ? value.addedRows : [];
+                      const newCells = (value && value.cells) ? { ...value.cells } : {};
+                      
+                      if (currentUser?.subject) {
+                        const subjectColIdx = (props.cols || []).findIndex(c => c.includes('学科') || c.includes('科目'));
+                        if (subjectColIdx !== -1) {
+                          newCells[`${rowName}_${subjectColIdx}`] = currentUser.subject;
+                        }
+                      }
+                      
+                      const serialColIdx = (props.cols || []).findIndex(c => c.includes('序号'));
+                      if (serialColIdx !== -1) {
+                        newCells[`${rowName}_${serialColIdx}`] = allRows.length + 1;
+                      }
+
                       if (onChange) {
                         onChange({
                           ...(value || {}),
-                          addedRows: [...currentAdded, rowName]
+                          addedRows: [...currentAdded, rowName],
+                          cells: newCells
                         });
                       }
-                    } else if (rowName) {
-                      alert("行名称已存在或无效！");
                     }
                   }}
                   className="text-blue-600 text-sm flex items-center hover:text-blue-800 font-medium px-3 py-1.5 bg-blue-50 rounded hover:bg-blue-100 transition-colors"
@@ -285,57 +465,120 @@ export default function QuestionRenderer({
         );
 
       case 'blank':
+        const blankValues = Array.isArray(value) ? value : (value !== undefined && value !== null && value !== '' ? [value] : ['']);
+        
+        const handleBlankChange = (index, newVal) => {
+          if (!onChange) return;
+          const newValues = [...blankValues];
+          newValues[index] = newVal;
+          onChange(newValues);
+        };
+
+        const addBlankRow = () => {
+          if (!onChange) return;
+          onChange([...blankValues, '']);
+        };
+
+        const removeBlankRow = (index) => {
+          if (!onChange) return;
+          const newValues = blankValues.filter((_, i) => i !== index);
+          onChange(newValues.length > 0 ? newValues : ['']);
+        };
+
         if (isEditMode || mode === 'edit' || (!mode && !isEditMode)) {
           return (
-            <div className="w-full">
-              <input 
-                type="text" 
-                placeholder={props.placeholder || '请输入...'} 
-                disabled={isDisabled}
-                value={value || ''}
-                onChange={(e) => onChange && onChange(e.target.value)}
-                className={`border border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${props.layout === 'horizontal' ? 'w-64' : 'w-full'} ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''}`} 
-              />
+            <div className="w-full space-y-2">
+              {blankValues.map((val, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input 
+                    type="text" 
+                    placeholder={props.placeholder || '请输入...'} 
+                    disabled={isDisabled}
+                    value={val}
+                    onChange={(e) => handleBlankChange(idx, e.target.value)}
+                    className={`border border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm flex-1 ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''}`} 
+                  />
+                  {!isDisabled && blankValues.length > 1 && (
+                    <button onClick={() => removeBlankRow(idx)} className="text-red-400 hover:text-red-600 p-1">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              {!isDisabled && (
+                <button 
+                  type="button"
+                  onClick={addBlankRow}
+                  className="text-blue-600 text-sm flex items-center hover:text-blue-800 font-medium px-2 py-1 bg-blue-50 rounded hover:bg-blue-100 transition-colors inline-flex mt-2"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  添加行
+                </button>
+              )}
             </div>
           );
         }
 
-        const otherResponses = responses.filter(r => r.userId !== currentUserId && r.answer !== undefined && r.answer !== '');
+        const otherResponses = responses.filter(r => r.userId !== currentUserId && r.answer !== undefined && r.answer !== '' && (!Array.isArray(r.answer) || r.answer.length > 0));
         const myResponse = responses.find(r => r.userId === currentUserId);
         const hasOthers = otherResponses.length > 0;
-        const showMySlot = (canFill && mode === 'fill') || myResponse;
+        const showMySlot = (canFill && !isEditMode && mode !== 'board') || myResponse;
         
         return (
           <div className="w-full space-y-3">
             {/* Show other people's occupied slots */}
-            {hasOthers && otherResponses.map((r, i) => (
-              <div key={`other-${i}`} className="flex items-center gap-2">
-                <div className="flex items-center w-24 shrink-0 text-sm text-gray-500">
-                  <span className="truncate" title={r.userName}>{r.userName}</span>
+            {hasOthers && otherResponses.map((r, i) => {
+              const otherVals = Array.isArray(r.answer) ? r.answer : [r.answer];
+              return otherVals.map((val, vIdx) => (
+                <div key={`other-${i}-${vIdx}`} className="flex items-center gap-2">
+                  <div className="flex items-center w-24 shrink-0 text-sm text-gray-500">
+                    <span className="truncate" title={r.userName}>{r.userName}{otherVals.length > 1 ? ` (${vIdx + 1})` : ''}</span>
+                  </div>
+                  <input 
+                    type="text" 
+                    disabled 
+                    value={String(val || '')}
+                    className={`border border-gray-200 rounded-md bg-gray-50 px-3 py-2 cursor-not-allowed text-gray-600 sm:text-sm flex-1`} 
+                  />
                 </div>
-                <input 
-                  type="text" 
-                  disabled 
-                  value={String(r.answer || '')}
-                  className={`border border-gray-200 rounded-md bg-gray-50 px-3 py-2 cursor-not-allowed text-gray-600 sm:text-sm ${props.layout === 'horizontal' ? 'w-64' : 'w-full'}`} 
-                />
-              </div>
-            ))}
+              ));
+            })}
 
             {/* Current user's slot */}
             {showMySlot && (
-              <div className="flex items-center gap-2">
-                <div className="flex items-center w-24 shrink-0 text-sm font-medium text-blue-600">
-                  <span className="truncate" title={userRole}>{currentUserId || '我'}</span>
-                </div>
-                <input 
-                  type="text" 
-                  placeholder={props.placeholder || '请输入...'} 
-                  disabled={isDisabled}
-                  value={value || ''}
-                  onChange={(e) => onChange && onChange(e.target.value)}
-                  className={`border border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${props.layout === 'horizontal' ? 'w-64' : 'w-full'} ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`} 
-                />
+              <div className="w-full space-y-2">
+                {blankValues.map((val, idx) => (
+                  <div key={`my-${idx}`} className="flex items-center gap-2">
+                    <div className="flex items-center w-24 shrink-0 text-sm font-medium text-blue-600">
+                      <span className="truncate" title={userRole}>{currentUserId || '我'}{blankValues.length > 1 ? ` (${idx + 1})` : ''}</span>
+                    </div>
+                    <input 
+                      type="text" 
+                      placeholder={props.placeholder || '请输入...'} 
+                      disabled={isDisabled}
+                      value={val}
+                      onChange={(e) => handleBlankChange(idx, e.target.value)}
+                      className={`border border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm flex-1 ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`} 
+                    />
+                    {!isDisabled && blankValues.length > 1 && (
+                      <button onClick={() => removeBlankRow(idx)} className="text-red-400 hover:text-red-600 p-1">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {!isDisabled && canFill && (
+                  <div className="ml-26 pl-2">
+                    <button 
+                      type="button"
+                      onClick={addBlankRow}
+                      className="text-blue-600 text-sm flex items-center hover:text-blue-800 font-medium px-2 py-1 bg-blue-50 rounded hover:bg-blue-100 transition-colors inline-flex"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      添加行
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -358,7 +601,7 @@ export default function QuestionRenderer({
         const otherTextResponses = responses.filter(r => r.userId !== currentUserId && r.answer !== undefined && r.answer !== '');
         const myTextResponse = responses.find(r => r.userId === currentUserId);
         const hasOtherTexts = otherTextResponses.length > 0;
-        const showMyTextSlot = (canFill && mode === 'fill') || myTextResponse;
+        const showMyTextSlot = (canFill && !isEditMode && mode !== 'board') || myTextResponse;
 
         return (
           <div className="w-full space-y-4">

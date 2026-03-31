@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import DataService from '../services/dataService';
 
 const AuthContext = createContext(null);
 
@@ -7,12 +8,31 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check local storage for existing session
-    const storedUser = localStorage.getItem('currentUser');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+    const initAuth = async () => {
+      // Check local storage for existing session
+      const storedUserStr = localStorage.getItem('currentUser');
+      if (storedUserStr && storedUserStr !== 'undefined' && storedUserStr !== 'null') {
+        try {
+          const storedUser = JSON.parse(storedUserStr);
+          if (storedUser && storedUser.username) {
+            // Fetch latest user data from backend to ensure we have 'id' and other new fields
+            const users = await DataService.getAllUsers();
+            const latestUser = users.find(u => u.username === storedUser.username);
+            if (latestUser) {
+              setUser(latestUser);
+              localStorage.setItem('currentUser', JSON.stringify(latestUser));
+            } else {
+              setUser(storedUser);
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing user from localStorage:", e);
+          localStorage.removeItem('currentUser');
+        }
+      }
+      setLoading(false);
+    };
+    initAuth();
   }, []);
 
   const login = (userData) => {

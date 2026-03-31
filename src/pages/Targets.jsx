@@ -12,26 +12,27 @@ const Targets = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    DataService.init();
-    loadData();
+    DataService.init().then(() => {
+      loadData();
+    });
   }, [user]);
 
-  const loadData = () => {
+  const loadData = async () => {
     setLoading(true);
-    const allTargets = DataService.getTargets();
+    const allTargets = await DataService.getTargets();
     setTargets(allTargets);
 
     // Determine which users the current user can manage
     let users = [];
     if (user?.role === 'district_director' || user?.role === 'admin') {
       // Director manages Researchers
-      const researchers = DataService.getUsersByRole('district_researcher');
+      const researchers = await DataService.getUsersByRole('district_researcher');
       users = [...users, ...researchers];
     } 
     
     if (user?.role === 'principal' || user?.role === 'admin') {
       // Principal manages Teachers (and other school users)
-      const teachers = DataService.getUsersByRole('teacher');
+      const teachers = await DataService.getUsersByRole('teacher');
       // Filter teachers by school if principal
       if (user?.role === 'principal') {
           users = [...users, ...teachers.filter(t => t.school === '市北四实验')]; // Mock user school for now
@@ -44,7 +45,7 @@ const Targets = () => {
     setLoading(false);
   };
 
-  const handleSetTarget = (e) => {
+  const handleSetTarget = async (e) => {
     e.preventDefault();
     if (!selectedUser || !targetValue) {
         alert('请选择用户并输入目标数值');
@@ -63,7 +64,7 @@ const Targets = () => {
         setterName: user.name
     };
 
-    DataService.setTarget(newTarget);
+    await DataService.setTarget(newTarget);
     alert('目标设定成功！');
     setTargetValue('');
     setSelectedUser('');

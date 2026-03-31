@@ -9,7 +9,7 @@ import ObservationForm from './pages/ObservationForm';
 import Reports from './pages/Reports';
 import Targets from './pages/Targets';
 import Users from './pages/Users';
-import { Settings } from './pages/Placeholders';
+import Settings from './pages/Settings';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -35,6 +35,7 @@ function App() {
             <Route path="observations" element={<ObservationList />} />
             <Route path="observations/new" element={<ObservationForm />} />
             <Route path="observations/edit/:id" element={<ObservationForm />} />
+            <Route path="observations/fill/:id" element={<ObservationForm mode="fill" />} />
             <Route path="reports" element={<Reports />} />
             <Route path="targets" element={<Targets />} />
             <Route path="users" element={<Users />} />

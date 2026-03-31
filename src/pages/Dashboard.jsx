@@ -30,13 +30,22 @@ const Dashboard = () => {
   });
 
   useEffect(() => {
-    DataService.init();
-    loadStats();
+    DataService.init().then(() => {
+      loadStats();
+    });
   }, [filters]);
 
-  const loadStats = () => {
-    const data = DataService.getDashboardStats(filters);
-    setStats(data);
+  const loadStats = async () => {
+    const isManager = ['admin', 'district_director', 'principal'].includes(user?.role);
+    
+    // For dashboard stats, dataService will handle the isManager logic now
+    const data = await DataService.getDashboardStats({ ...filters, currentUser: user });
+    
+    // For recent surveys, managers should see all recent surveys, teachers/researchers only see their own
+    const surveyFilters = isManager ? {} : { currentUser: user };
+    const surveys = await DataService.getSurveys(surveyFilters);
+    
+    setStats({ ...data, recentSurveys: surveys.slice(0, 5) });
   };
 
   const handleFilterChange = (key, value) => {
@@ -50,25 +59,23 @@ const Dashboard = () => {
   const [targetStats, setTargetStats] = useState({ target: 0, completed: 0 });
   
   useEffect(() => {
-    if (!isManager && user) {
-        const targets = DataService.getTargets();
-        // Find target set FOR this user
-        const myTarget = targets.find(t => t.userId === user.username);
-        
-        if (myTarget) {
-            // Calculate completed count (Mock logic or filter surveys)
-            // For real implementation: 
-            // const completed = DataService.getSurveys({ observer: user.name }).length;
-            // Using mock random for demo consistency with Targets page, OR better: use real count
-            const surveys = DataService.getSurveys({ observer: user.name }); // Assuming observer name matches user.name
-            const completed = surveys.length;
-            
-            setTargetStats({
-                target: myTarget.targetValue,
-                completed: completed
-            });
-        }
-    }
+    const fetchTargets = async () => {
+      if (!isManager && user) {
+          const targets = await DataService.getTargets();
+          const myTarget = targets.find(t => t.userId === user.username);
+          
+          if (myTarget) {
+              const surveys = await DataService.getSurveys({ observer: user.name });
+              const completed = surveys.length;
+              
+              setTargetStats({
+                  target: myTarget.targetValue,
+                  completed: completed
+              });
+          }
+      }
+    };
+    fetchTargets();
   }, [user, isManager]);
 
   if (!stats) return <div className="p-6">加载中...</div>;
@@ -445,7 +452,7 @@ const Dashboard = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {/* Use DataService to get a few recent records */}
-              {DataService.getSurveys({}).slice(0, 5).map((survey) => (
+              {(stats?.recentSurveys || []).map((survey) => (
                 <tr key={survey.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{survey.subject}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{survey.school}</td>

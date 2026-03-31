@@ -37,9 +37,7 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
   
   // Also get principals for selection if needed
   const principals = allUsers.filter(u => u.role === 'principal');
-  const directors = allUsers.filter(u => u.role === "district_director");
-  const researchers = allUsers.filter(u => u.role === "district_researcher");
-  const availableUsers = [...filteredTeachers, ...principals, ...directors, ...researchers];
+  const availableUsers = [...filteredTeachers, ...principals];
 
   const handleConfirm = () => {
     const publishConfig = {

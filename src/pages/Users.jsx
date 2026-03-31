@@ -3,6 +3,7 @@ import {
   Users as UsersIcon, Plus, Edit2, Trash2, 
   Search, Shield, CheckCircle, XCircle, Key, History
 } from 'lucide-react';
+import DataService from '../services/dataService';
 
 export default function Users() {
   const [users, setUsers] = useState([]);
@@ -17,23 +18,24 @@ export default function Users() {
   // Form state
   const [password, setPassword] = useState('');
   const [notifyUser, setNotifyUser] = useState(false);
+  const [selectedRole, setSelectedRole] = useState('user');
+
+  const loadUsers = async () => {
+    setLoading(true);
+    const data = await DataService.getAllUsers();
+    setUsers(data);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    setLoading(true);
-    setTimeout(() => {
-      setUsers([
-        { id: 1, username: 'admin', name: '系统管理员', role: 'admin', department: '信息中心', status: 'active', lastLogin: '2026-03-20 08:00' },
-        { id: 2, username: 'teacher_zhang', name: '张老师', role: 'user', department: '数学组', status: 'active', lastLogin: '2026-03-19 14:30' },
-        { id: 3, username: 'teacher_li', name: '李老师', role: 'user', department: '英语组', status: 'inactive', lastLogin: '2026-03-10 09:15' }
-      ]);
-      setLoading(false);
-    }, 500);
+    loadUsers();
   }, []);
 
   const filteredUsers = users.filter(u => 
-    u.name.includes(searchTerm) || 
-    u.username.includes(searchTerm) || 
-    u.department.includes(searchTerm)
+    (u.name || '').includes(searchTerm) || 
+    (u.username || '').includes(searchTerm) || 
+    (u.school || '').includes(searchTerm) ||
+    (u.subject || '').includes(searchTerm)
   );
 
   const checkPasswordStrength = (pwd) => {
@@ -54,7 +56,7 @@ export default function Users() {
     setPassword(pwd);
   };
 
-  const handleSaveUser = (e) => {
+  const handleSaveUser = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     
@@ -64,42 +66,45 @@ export default function Users() {
       return;
     }
 
-    const newUser = {
-      id: editingUser ? editingUser.id : Date.now(),
+    const userData = {
       username: formData.get('username'),
       name: formData.get('name'),
       role: formData.get('role'),
-      department: formData.get('department'),
+      school: formData.get('school'),
+      subject: formData.get('subject'),
       status: formData.get('status') || 'active',
       lastLogin: editingUser ? editingUser.lastLogin : '-'
     };
 
     if (editingUser) {
-      setUsers(users.map(u => u.id === editingUser.id ? newUser : u));
+      await DataService.updateUser(editingUser.id, userData);
       if (password) {
         alert(`密码已更新${notifyUser ? '，并已通过邮件/短信通知用户' : ''}`);
       }
     } else {
-      setUsers([...users, newUser]);
+      await DataService.addUser(userData);
       if (notifyUser) {
         alert('账号创建成功，已发送通知给用户！');
       }
     }
     
+    loadUsers();
     setIsModalOpen(false);
     setEditingUser(null);
     setPassword('');
     setNotifyUser(false);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (window.confirm('确定要删除该用户吗？此操作不可恢复。')) {
-      setUsers(users.filter(u => u.id !== id));
+      await DataService.deleteUser(id);
+      loadUsers();
     }
   };
 
   const openEditModal = (user = null) => {
     setEditingUser(user);
+    setSelectedRole(user?.role || 'teacher');
     setPassword('');
     setNotifyUser(false);
     setIsModalOpen(true);
@@ -144,7 +149,7 @@ export default function Users() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户信息</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">部门</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">学校/学科</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">角色</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最后登录</th>
@@ -159,7 +164,7 @@ export default function Users() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
-                        {user.name.charAt(0)}
+                        {user.name ? user.name.charAt(0) : '?'}
                       </div>
                       <div className="ml-4">
                         <div className="text-sm font-medium text-gray-900">{user.name}</div>
@@ -167,10 +172,17 @@ export default function Users() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.department}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <div>{user.school || '-'}</div>
+                    <div className="text-xs text-gray-400">{user.subject || ''}</div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'}`}>
-                      {user.role === 'admin' ? '管理员' : '普通用户'}
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                      {user.role === 'admin' ? '管理员' : 
+                       user.role === 'district_director' ? '区教研主任' :
+                       user.role === 'district_researcher' ? '区教研员' :
+                       user.role === 'principal' ? '校长' :
+                       user.role === 'teacher' ? '教师' : user.role}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -211,17 +223,42 @@ export default function Users() {
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">部门</label>
-                  <input name="department" defaultValue={editingUser?.department} required className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">学校</label>
+                  <input name="school" defaultValue={editingUser?.school} className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">角色权限</label>
-                  <select name="role" defaultValue={editingUser?.role || 'user'} className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                    <option value="user">普通用户</option>
-                    <option value="admin">管理员</option>
+                  <select 
+                    name="role" 
+                    value={selectedRole}
+                    onChange={(e) => setSelectedRole(e.target.value)}
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="teacher">教师</option>
+                    <option value="principal">校长</option>
+                    <option value="district_researcher">区教研员</option>
+                    <option value="district_director">区教研主任</option>
+                    <option value="admin">系统管理员</option>
                   </select>
                 </div>
               </div>
+
+              {selectedRole === 'teacher' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">任教学科</label>
+                  <select name="subject" defaultValue={editingUser?.subject || '数学'} className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="语文">语文</option>
+                    <option value="数学">数学</option>
+                    <option value="英语">英语</option>
+                    <option value="物理">物理</option>
+                    <option value="化学">化学</option>
+                    <option value="生物">生物</option>
+                    <option value="政治">政治</option>
+                    <option value="历史">历史</option>
+                    <option value="地理">地理</option>
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">账号状态</label>

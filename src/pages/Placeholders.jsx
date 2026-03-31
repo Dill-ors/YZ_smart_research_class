@@ -11,4 +11,3 @@ const PlaceholderPage = ({ title }) => {
 
 export const Reports = () => <PlaceholderPage title="报告管理" />;
 export const Targets = () => <PlaceholderPage title="目标管理" />;
-export const Settings = () => <PlaceholderPage title="系统设置" />;

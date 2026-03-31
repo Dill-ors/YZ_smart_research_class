@@ -88,7 +88,7 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
         )}
 
         {/* Common: Label */}
-        {type !== 'pagination' && (
+        {type !== 'pagination' && type !== 'lesson_record' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">标题/问题内容</label>
             <textarea 
@@ -97,6 +97,20 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
               className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               rows={3}
             />
+          </div>
+        )}
+        
+        {/* Lesson Record Label */}
+        {type === 'lesson_record' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">模块名称</label>
+            <input 
+              type="text"
+              value={props.label || ''} 
+              onChange={(e) => handleChange('label', e.target.value)}
+              className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            />
+            <p className="text-xs text-gray-500 mt-1">注：系统会自动在前端为填报老师添加“(一) [学科]学科”前缀</p>
           </div>
         )}
 
@@ -259,6 +273,16 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
                 <option value="checkbox">多选模式</option>
                 <option value="input">文本输入模式</option>
               </select>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">首列标题 (第一行第一列)</label>
+              <input 
+                type="text" 
+                value={props.topLeftLabel || ''} 
+                onChange={(e) => handleChange('topLeftLabel', e.target.value)}
+                placeholder="例如: 选项 / 评价"
+                className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              />
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">行选项 (Rows)</label>
