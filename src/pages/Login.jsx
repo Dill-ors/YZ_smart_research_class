@@ -5,8 +5,8 @@ import { BookOpen, User, Lock, ChevronDown } from 'lucide-react';
 import DataService from '../services/dataService';
 
 const Login = () => {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -24,7 +24,8 @@ const Login = () => {
     const foundUser = users.find(u => u.username === username);
 
     if (foundUser) {
-      if (foundUser.password && foundUser.password !== password) {
+      const userPassword = foundUser.password || '123';
+      if (userPassword !== password) {
         setError('密码不正确，请检查');
       } else {
         login(foundUser);

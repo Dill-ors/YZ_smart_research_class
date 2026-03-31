@@ -118,9 +118,6 @@ const Settings = () => {
             <Download className="w-5 h-5 mr-2 text-blue-600" />
             数据备份与恢复
           </h2>
-          <p className="text-sm text-gray-500 mt-1">
-            当前系统采用纯前端存储架构。为了防止清理浏览器缓存导致数据丢失，建议您定期导出数据备份到本地。
-          </p>
         </div>
 
         <div className="p-6 space-y-8">

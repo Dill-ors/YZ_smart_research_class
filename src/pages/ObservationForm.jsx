@@ -1,37 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Save, Plus, Trash2, Camera, Upload } from 'lucide-react';
+import React, { useState, useEffect, useId } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { ArrowLeft, Save, Plus, Trash2, Upload, X, Download } from 'lucide-react';
 import DataService from '../services/dataService';
 import { uploadToOSS } from '../services/ossService';
+import SurveyEngine from '../components/SurveyEngine';
 
-const SCHOOL_DATA = {
-  '市北四实验': {
-    grades: ['初一', '初二', '初三'],
-    classes: Array.from({ length: 18 }, (_, i) => `${i + 1}班`),
-    subjects: ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '道法', '体育', '音乐', '美术', '信息'],
-    teachers: {
-      '数学': {
-        '初二': {
-          '1班': '隋老师', '4班': '隋老师',
-          '2班': '毛老师', '3班': '毛老师',
-          '5班': '李老师', '6班': '李老师', '13班': '李老师', '14班': '李老师',
-          '7班': '任老师', '8班': '任老师',
-          '9班': '邵老师', '10班': '邵老师',
-          '11班': '吕老师', '12班': '吕老师'
-        }
-      }
-    }
-  },
-  '青岛五十三中': {
-    grades: ['初一', '初二', '初三'],
-    classes: ['1班', '2班', '3班', '4班'],
-    subjects: ['语文', '数学', '英语'],
-    teachers: {} 
-  }
-};
-
-const UploadButton = ({ onUploadSuccess, type = 'upload' }) => {
+const UploadButton = ({ onUploadSuccess }) => {
   const [uploading, setUploading] = useState(false);
+  const id = useId();
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
@@ -50,14 +26,11 @@ const UploadButton = ({ onUploadSuccess, type = 'upload' }) => {
     }
   };
 
-  const id = `oss-${type}-${Math.random().toString(36).substr(2, 9)}`;
-
   return (
     <div className="relative inline-block">
       <input
         type="file"
         accept="image/*"
-        capture={type === 'camera' ? 'environment' : undefined}
         onChange={handleFileChange}
         className="hidden"
         id={id}
@@ -65,14 +38,14 @@ const UploadButton = ({ onUploadSuccess, type = 'upload' }) => {
       <label
         htmlFor={id}
         className={`cursor-pointer inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-        title={type === 'camera' ? "拍照" : "上传图片"}
+        title="上传图片"
       >
         {uploading ? (
           <span>...</span>
         ) : (
           <>
-            {type === 'camera' ? <Camera className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
-            <span className="ml-1">{type === 'camera' ? "拍照" : "上传"}</span>
+            <Upload className="h-4 w-4" />
+            <span className="ml-1">上传</span>
           </>
         )}
       </label>
@@ -83,6 +56,10 @@ const UploadButton = ({ onUploadSuccess, type = 'upload' }) => {
 const ObservationForm = ({ mode = 'edit' }) => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const isBoardMode = queryParams.get('mode') === 'board';
+  const displayMode = isBoardMode ? 'board' : mode;
   const [formData, setFormData] = useState({
     school: '',
     grade: '',
@@ -105,7 +82,11 @@ const ObservationForm = ({ mode = 'edit' }) => {
     student_achievement: '',
     highlights: '',
     problems_suggestions: '',
-    overall_evaluation: ''
+    school_suggestions: '',
+    overall_evaluation: '',
+    recordMode: 'standard', // 'standard' | 'photo' | 'custom' | 'simple'
+    images: [], // array of image urls
+    customSurveyData: null // for custom mode
   });
 
   useEffect(() => {
@@ -113,7 +94,10 @@ const ObservationForm = ({ mode = 'edit' }) => {
       DataService.init().then(async () => {
         const survey = await DataService.getSurveyById(id);
         if (survey) {
-          setFormData(survey);
+          setFormData(prev => ({ ...prev, ...survey }));
+          if (survey.recordMode) {
+              setRecordMode(survey.recordMode);
+          }
         } else {
           alert('记录不存在');
           navigate('/observations');
@@ -123,23 +107,33 @@ const ObservationForm = ({ mode = 'edit' }) => {
   }, [id, navigate]);
 
   const [availableGrades, setAvailableGrades] = useState([]);
-  const [availableClasses, setAvailableClasses] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
   const [availableTeachers, setAvailableTeachers] = useState([]);
+  const [recordMode, setRecordMode] = useState('standard');
+  const [schools, setSchools] = useState([]);
 
-  // Cascade logic
   useEffect(() => {
-    if (formData.school && SCHOOL_DATA[formData.school]) {
-      setAvailableGrades(SCHOOL_DATA[formData.school].grades);
-      setAvailableClasses(SCHOOL_DATA[formData.school].classes);
-      setAvailableSubjects(SCHOOL_DATA[formData.school].subjects);
+    if (DataService.getSchools) {
+      setSchools(DataService.getSchools().map(s => s.name));
+    }
+  }, []);
+
+  // Set available subjects and grades based on selected school
+  useEffect(() => {
+    if (formData.school) {
+      setAvailableGrades(['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三']);
+      if (DataService.getSubjects) {
+        setAvailableSubjects(DataService.getSubjects().map(s => s.name));
+      } else {
+        setAvailableSubjects([]);
+      }
     } else {
       setAvailableGrades([]);
-      setAvailableClasses([]);
       setAvailableSubjects([]);
     }
   }, [formData.school]);
 
+  // Handle Cascading Resets
   const handleChange = (e) => {
     const { name, value } = e.target;
     
@@ -187,6 +181,14 @@ const ObservationForm = ({ mode = 'edit' }) => {
   };
 
   const handleUploadSuccess = (field) => (url) => {
+    if (field === 'images') {
+        setFormData(prev => ({
+            ...prev,
+            images: [...(prev.images || []), url]
+        }));
+        return;
+    }
+    
     const appendText = `[图片: ${url}]`;
 
     // Check if field is a path for processSteps array
@@ -238,25 +240,84 @@ const ObservationForm = ({ mode = 'edit' }) => {
     // Automatically set the observer to the current user's name if they are a teacher or researcher
     const userStr = localStorage.getItem('currentUser');
     const user = userStr ? JSON.parse(userStr) : null;
-    const finalData = { ...formData };
+    const finalData = { ...formData, recordMode };
     
     if (user && (user.role === 'teacher' || user.role === 'district_researcher')) {
         finalData.observer = user.name;
+        // Milestone 7: 记录教研员信息
+        if (user.role === 'district_researcher') {
+            finalData.researcherName = user.name;
+        }
+    }
+
+    if (recordMode === 'custom') {
+        // Handle custom mode submit via SurveyEngine callback, not here
+        return;
     }
 
     await DataService.addSurvey(finalData);
     navigate('/observations');
   };
 
+  const isJuniorHigh = formData.grade && formData.grade.includes('初');
+
   return (
     <div className="max-w-4xl mx-auto bg-white shadow sm:rounded-lg">
       <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-        <h3 className="text-lg leading-6 font-medium text-gray-900">
-          新建听课记录
-        </h3>
-        <p className="mt-1 max-w-2xl text-sm text-gray-500">
-          请填写完整的课堂观察信息。
-        </p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="text-lg leading-6 font-medium text-gray-900">
+              {mode === 'fill' ? '查看听课记录' : mode === 'edit' ? '编辑听课记录' : '新建听课记录'}
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm text-gray-500 print:hidden">
+              请填写完整的课堂观察信息。
+            </p>
+          </div>
+          {mode !== 'fill' && (
+            <div className="flex bg-gray-100 p-1 rounded-lg print:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  setRecordMode('standard');
+                  setFormData(prev => ({ ...prev, recordMode: 'standard' }));
+                }}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${recordMode === 'standard' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                标准模式
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecordMode('simple');
+                  setFormData(prev => ({ ...prev, recordMode: 'simple' }));
+                }}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${recordMode === 'simple' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                简洁模式
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecordMode('photo');
+                  setFormData(prev => ({ ...prev, recordMode: 'photo' }));
+                }}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${recordMode === 'photo' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                快捷上传模式
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecordMode('custom');
+                  setFormData(prev => ({ ...prev, recordMode: 'custom' }));
+                }}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${recordMode === 'custom' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                自定义模式
+              </button> 
+            </div>
+          )}
+        </div>
       </div>
       
       <form onSubmit={handleSubmit} className="px-4 py-5 sm:p-6 space-y-8">
@@ -264,18 +325,26 @@ const ObservationForm = ({ mode = 'edit' }) => {
         <section>
           <h4 className="text-md font-medium text-gray-900 mb-4 border-l-4 border-blue-500 pl-2">1. 课堂基本情况</h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">调研方式</label>
-              <select
-                name="survey_mode"
-                value={formData.survey_mode}
-                onChange={handleChange}
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
-                disabled={mode === 'fill'}
-              >
-                <option value="集中调研">集中调研</option>
-                <option value="个别调研">个别调研</option>
-              </select>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">调研方式</label>
+              <div className="flex gap-4">
+                <label className="inline-flex items-center">
+                  <input type="radio" name="survey_mode" value="集中调研" checked={formData.survey_mode === '集中调研'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={mode === 'fill'} />
+                  <span className="ml-2 text-gray-700">集中调研</span>
+                </label>
+                <label className="inline-flex items-center">
+                  <input type="radio" name="survey_mode" value="个别调研" checked={formData.survey_mode === '个别调研'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={mode === 'fill'} />
+                  <span className="ml-2 text-gray-700">个别调研</span>
+                </label>
+                <label className="inline-flex items-center">
+                  <input type="radio" name="survey_mode" value="集备调研" checked={formData.survey_mode === '集备调研'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={mode === 'fill'} />
+                  <span className="ml-2 text-gray-700">集备调研</span>
+                </label>
+                <label className="inline-flex items-center">
+                  <input type="radio" name="survey_mode" value="其它" checked={formData.survey_mode === '其它'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={mode === 'fill'} />
+                  <span className="ml-2 text-gray-700">其它</span>
+                </label>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">学校</label>
@@ -288,7 +357,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 disabled={mode === 'fill'}
               >
                 <option value="">请选择学校</option>
-                {Object.keys(SCHOOL_DATA).map(s => <option key={s} value={s}>{s}</option>)}
+                {schools.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div>
@@ -305,20 +374,19 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 {availableGrades.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">班级</label>
-              <select
-                name="class"
-                value={formData.class}
-                onChange={handleChange}
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
-                required
-                disabled={!formData.grade || mode === 'fill'}
-              >
-                <option value="">请选择班级</option>
-                {availableClasses.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">班级</label>
+            <input
+              type="text"
+              name="class"
+              value={formData.class}
+              onChange={handleChange}
+              placeholder="请输入班级(如: 1班)"
+              className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+              required
+              disabled={!formData.grade || mode === 'fill'}
+            />
+          </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">学科</label>
               <select
@@ -383,14 +451,172 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 <option value="review">复习课</option>
                 <option value="exercise">习题课</option>
                 <option value="experiment">实验课</option>
-                <option value="other">其他</option>
+                <option value="other">其它</option>
               </select>
             </div>
           </div>
         </section>
 
-        {/* 2. Teaching Process */}
-        <section>
+        {/* Quick Photo Mode View */}
+        {recordMode === 'photo' && (
+          <section className="bg-gray-50 p-6 rounded-lg border-2 border-dashed border-gray-300">
+            <div className="text-center">
+              <Upload className="mx-auto h-12 w-12 text-gray-400" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900">快捷上传记录</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                如果时间紧张，可以直接上传听课笔记图片，系统将自动保存。<br/>
+                建议上传清晰的照片。
+              </p>
+              {(!formData.images || formData.images.length < 9) && (
+                <div className="mt-6 flex justify-center gap-2">
+                  <UploadButton onUploadSuccess={handleUploadSuccess('images')} />
+                </div>
+              )}
+            </div>
+
+            {formData.images && formData.images.length > 0 && (
+              <div className="mt-8">
+                <h4 className="text-sm font-medium text-gray-900 mb-4">已上传图片 ({formData.images?.length || 0})</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {formData.images.map((url, idx) => (
+                    <div key={idx} className="relative group">
+                      <img src={url} alt={`记录图 ${idx + 1}`} className="h-32 w-full object-cover rounded-lg border border-gray-200" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            images: prev.images.filter((_, i) => i !== idx)
+                          }));
+                        }}
+                        className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="mt-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">补充说明 (可选)</label>
+                <textarea
+                  name="overall_evaluation"
+                  rows={4}
+                  value={formData.overall_evaluation}
+                  onChange={handleChange}
+                  placeholder="可在此添加对图片的文字补充说明..."
+                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                  disabled={mode === 'fill'}
+                />
+            </div>
+          </section>
+        )}
+
+        {/* Custom Mode View */}
+        {recordMode === 'custom' && (
+          <section className="bg-white rounded-lg">
+             <SurveyEngine 
+                initialData={{ ...(formData.customSurveyData || { title: '自定义听课记录', questions: [] }), customAnswers: formData.customAnswers }} 
+                mode={displayMode === 'board' ? 'view' : (mode === 'fill' ? 'view' : 'create')}
+                disablePermissions={true}
+                onSave={(surveyData) => {
+                    setFormData(prev => ({ ...prev, customSurveyData: surveyData }));
+                }} 
+                onSubmit={async (answers) => {
+                    // For custom mode fill
+                    const finalData = { ...formData, recordMode, customSurveyData: formData.customSurveyData, customAnswers: answers };
+                    const userStr = localStorage.getItem('currentUser');
+                    const user = userStr ? JSON.parse(userStr) : null;
+                    if (user && (user.role === 'teacher' || user.role === 'district_researcher')) {
+                        finalData.observer = user.name;
+                        if (user.role === 'district_researcher') {
+                            finalData.researcherName = user.name;
+                        }
+                    }
+                    await DataService.addSurvey(finalData);
+                    navigate('/observations');
+                }}
+                onCancel={() => navigate('/observations')} 
+              />
+          </section>
+        )}
+
+        {/* Simple Mode View */}
+        {recordMode === 'simple' && (
+          <>
+            <section>
+              <h4 className="text-md font-medium text-gray-900 mb-4 border-l-4 border-blue-500 pl-2">2. 评价与总结</h4>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-sm font-medium text-gray-700">（1）主要优点：</label>
+                    {mode !== 'fill' && (
+                      <div className="flex gap-2">
+                        <UploadButton onUploadSuccess={handleUploadSuccess('highlights')} />
+                      </div>
+                    )}
+                  </div>
+                  <textarea
+                    name="highlights"
+                    rows={4}
+                    value={formData.highlights}
+                    onChange={handleChange}
+                    className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                    disabled={mode === 'fill'}
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-sm font-medium text-gray-700">（2）存在问题：</label>
+                    {mode !== 'fill' && (
+                      <div className="flex gap-2">
+                        <UploadButton onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
+                      </div>
+                    )}
+                  </div>
+                  <textarea
+                    name="problems_suggestions"
+                    rows={4}
+                    value={formData.problems_suggestions}
+                    onChange={handleChange}
+                    className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                    disabled={mode === 'fill'}
+                  />
+                </div>
+              </div>
+            </section>
+            
+            <section>
+              <h4 className="text-md font-medium text-gray-900 mb-4 border-l-4 border-blue-500 pl-2">3. 给学校的意见建议</h4>
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-sm font-medium text-gray-700">给学校的意见建议：</label>
+                  {mode !== 'fill' && (
+                    <div className="flex gap-2">
+                      <UploadButton onUploadSuccess={handleUploadSuccess('school_suggestions')} />
+                    </div>
+                  )}
+                </div>
+                <textarea
+                  name="school_suggestions"
+                  rows={4}
+                  value={formData.school_suggestions}
+                  onChange={handleChange}
+                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                  disabled={mode === 'fill'}
+                />
+              </div>
+            </section>
+          </>
+        )}
+
+        {/* Standard Mode View */}
+        {recordMode === 'standard' && (
+          <>
+            {/* 2. Teaching Process */}
+            <section>
           <div className="flex justify-between items-center mb-4 border-l-4 border-blue-500 pl-2">
             <h4 className="text-md font-medium text-gray-900">2. 教学过程实录与观察</h4>
             {mode !== 'fill' && (
@@ -454,8 +680,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                       <Trash2 className="h-5 w-5 mx-auto" />
                     </button>
                   )}
-                  {mode !== 'fill' && <UploadButton type="upload" onUploadSuccess={handleUploadSuccess(`processSteps[${index}].content`)} />}
-                  {mode !== 'fill' && <UploadButton type="camera" onUploadSuccess={handleUploadSuccess(`processSteps[${index}].content`)} />}
+                  {mode !== 'fill' && <UploadButton onUploadSuccess={handleUploadSuccess(`processSteps[${index}].content`)} />}
                 </div>
               </div>
             ))}
@@ -470,8 +695,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
               <div className="flex justify-between items-center mb-2">
                 <h5 className="text-sm font-medium text-gray-900">A. 教师教学行为观察</h5>
                 <div className="flex gap-2">
-                  <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('teacher_observation_all')} />
-                  <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('teacher_observation_all')} />
+                  <UploadButton onUploadSuccess={handleUploadSuccess('teacher_observation_all')} />
                 </div>
               </div>
               <div className="grid grid-cols-1 gap-4">
@@ -503,8 +727,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   <h5 className="text-sm font-medium text-gray-900">B. 学生学习状态观察</h5>
                   {mode !== 'fill' && (
                     <div className="flex gap-2">
-                      <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('student_observation_all')} />
-                      <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('student_observation_all')} />
+                      <UploadButton onUploadSuccess={handleUploadSuccess('student_observation_all')} />
                     </div>
                   )}
                 </div>
@@ -542,8 +765,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   <label className="block text-sm font-medium text-gray-700">课堂特色与亮点</label>
                   {mode !== 'fill' && (
                     <div className="flex gap-2">
-                      <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('highlights')} />
-                      <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('highlights')} />
+                      <UploadButton onUploadSuccess={handleUploadSuccess('highlights')} />
                     </div>
                   )}
                 </div>
@@ -561,8 +783,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   <label className="block text-sm font-medium text-gray-700">问题与改进建议</label>
                   {mode !== 'fill' && (
                     <div className="flex gap-2">
-                      <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
-                      <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
+                      <UploadButton onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
                     </div>
                   )}
                 </div>
@@ -580,8 +801,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   <label className="block text-sm font-medium text-gray-700">总体评价</label>
                   {mode !== 'fill' && (
                     <div className="flex gap-2">
-                      <UploadButton type="upload" onUploadSuccess={handleUploadSuccess('overall_evaluation')} />
-                      <UploadButton type="camera" onUploadSuccess={handleUploadSuccess('overall_evaluation')} />
+                      <UploadButton onUploadSuccess={handleUploadSuccess('overall_evaluation')} />
                     </div>
                   )}
                 </div>
@@ -596,8 +816,10 @@ const ObservationForm = ({ mode = 'edit' }) => {
               </div>
             </div>
           </section>
+          </>
+        )}
 
-          <div className="pt-5 border-t border-gray-200">
+          <div className="pt-5 border-t border-gray-200 print:hidden">
             <div className="flex justify-end">
               <button
                 type="button"
@@ -606,7 +828,17 @@ const ObservationForm = ({ mode = 'edit' }) => {
               >
                 {mode === 'fill' ? '返回' : '取消'}
               </button>
-              {mode !== 'fill' && (
+              {mode === 'fill' && (
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="ml-3 inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  <Download className="h-5 w-5 mr-2" />
+                  导出PDF
+                </button>
+              )}
+              {mode !== 'fill' && recordMode !== 'custom' && (
                 <button
                   type="submit"
                   className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"

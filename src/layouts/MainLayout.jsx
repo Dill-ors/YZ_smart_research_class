@@ -9,7 +9,8 @@ import {
   LogOut, 
   Menu, 
   X,
-  Target
+  Target,
+  Database
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -25,11 +26,12 @@ const MainLayout = () => {
 
   const menuItems = [
     { name: '数据看板', path: '/', icon: LayoutDashboard, roles: ['admin', 'district_director', 'district_researcher', 'principal', 'teacher'] },
-    { name: '调研与听课', path: '/observations', icon: FileText, roles: ['admin', 'district_director', 'district_researcher', 'principal', 'teacher'] },
-    { name: '问卷中心', path: '/reports', icon: FileText, roles: ['admin', 'district_director', 'district_researcher', 'principal', 'teacher'] },
+    { name: '听课记录', path: '/observations', icon: FileText, roles: ['admin', 'district_director', 'district_researcher', 'principal', 'teacher'] },
+    { name: '集中调研', path: '/reports', icon: FileText, roles: ['admin', 'district_director', 'district_researcher', 'principal', 'teacher'] },
     { name: '目标管理', path: '/targets', icon: Target, roles: ['admin', 'district_director', 'principal'] },
     { name: '用户管理', path: '/users', icon: Users, roles: ['admin'] },
-    { name: '系统设置', path: '/settings', icon: Settings, roles: ['admin'] },
+    { name: '基础信息', path: '/basic-info', icon: Database, roles: ['admin', 'district_director'] },
+    { name: '系统设置', path: '/settings', icon: Settings, roles: ['admin', 'district_director'] },
   ];
 
   const filteredMenu = menuItems.filter(item => item.roles.includes(user?.role || 'teacher'));
@@ -48,7 +50,7 @@ const MainLayout = () => {
       {/* Sidebar */}
       <div 
         className={clsx(
-          "fixed inset-y-0 left-0 z-30 w-64 bg-white shadow-lg transform transition-transform lg:translate-x-0 lg:static lg:inset-0",
+          "fixed inset-y-0 left-0 z-30 w-64 bg-white shadow-lg transform transition-transform lg:translate-x-0 lg:static lg:inset-0 print:hidden",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >

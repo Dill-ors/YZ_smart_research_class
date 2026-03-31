@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Eye, ArrowLeft, Download, BarChart2 } from 'lucide-react';
+import { Save, Eye, ArrowLeft, Download, BarChart2, MessageSquare, RefreshCw } from 'lucide-react';
 import { QUESTION_TYPES } from './QuestionTypes';
 import QuestionRenderer from './QuestionRenderer';
 import PropertyPanel from './PropertyPanel';
 import { useAuth } from '../../context/AuthContext';
+import DataService from '../../services/dataService';
 
-export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, mode = 'edit', responses = [] }) {
+export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, onRefresh, mode = 'edit', responses = [] }) {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState(mode === 'fill' || mode === 'board' ? 'preview' : 'edit'); // edit, preview, analysis
   const [questions, setQuestions] = useState(initialData?.questions || []);
@@ -94,6 +95,33 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
 
   const selectedQuestion = questions.find(q => q.id === selectedId);
 
+  const [targetUsers, setTargetUsers] = useState(null);
+
+  useEffect(() => {
+    if (activeTab === 'analysis') {
+      DataService.getAllUsers().then(users => {
+        const target = initialData?.publishConfig?.target;
+        if (!target || target.type === 'all') {
+          setTargetUsers(users);
+        } else if (target.type === 'role') {
+          const roleMap = { '教师': 'teacher', '区调研员': 'district_researcher', '区主任': 'district_director', '校长': 'principal' };
+          const mappedRoles = target.roles.map(r => roleMap[r] || r);
+          setTargetUsers(users.filter(u => mappedRoles.includes(u.role)));
+        } else if (target.type === 'school') {
+          setTargetUsers(users.filter(u => target.schools.includes(u.school)));
+        } else if (target.type === 'user') {
+          setTargetUsers(users.filter(u => target.userIds?.includes(u.id)));
+        } else if (target.type === 'group') {
+          const groups = DataService.getUserGroups ? DataService.getUserGroups() : [];
+          const selectedG = groups.filter(g => target.groupIds?.includes(g.id));
+          const userIdsInGroups = new Set();
+          selectedG.forEach(g => (g.members || []).forEach(id => userIdsInGroups.add(id)));
+          setTargetUsers(users.filter(u => userIdsInGroups.has(u.id)));
+        }
+      }).catch(err => console.error("Failed to load target users", err));
+    }
+  }, [activeTab, initialData]);
+
   // Split questions into pages for preview
   const pages = [];
   let currentPage = [];
@@ -130,25 +158,27 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
           )}
         </div>
         <div className="flex items-center gap-4">
-          {mode !== 'fill' && mode !== 'board' && (
+          {mode !== 'fill' && (
             <div className="flex bg-gray-100 p-1 rounded-lg">
-              <button 
-                onClick={() => setActiveTab('edit')}
-                className={`px-4 py-1.5 text-sm font-medium rounded-md ${activeTab === 'edit' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
-              >
-                编辑模式
-              </button>
+              {mode !== 'board' && (
+                <button 
+                  onClick={() => setActiveTab('edit')}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md ${activeTab === 'edit' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                  编辑模式
+                </button>
+              )}
               <button 
                 onClick={() => { setActiveTab('preview'); setPreviewPageIdx(0); }}
                 className={`px-4 py-1.5 text-sm font-medium rounded-md flex items-center gap-1 ${activeTab === 'preview' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
               >
-                <Eye className="w-4 h-4" /> 预览体验
+                <Eye className="w-4 h-4" /> 问卷原卷
               </button>
               <button 
                 onClick={() => setActiveTab('analysis')}
                 className={`px-4 py-1.5 text-sm font-medium rounded-md flex items-center gap-1 ${activeTab === 'analysis' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
               >
-                <BarChart2 className="w-4 h-4" /> 数据分析
+                <BarChart2 className="w-4 h-4" /> 填报统计
               </button>
             </div>
           )}
@@ -192,7 +222,7 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
 
             {/* Center Canvas */}
             <div className="flex-1 overflow-y-auto p-8" onClick={() => setSelectedId(null)}>
-              <div className="max-w-3xl mx-auto space-y-4">
+              <div className="max-w-5xl w-full mx-auto space-y-4">
                 {questions.length === 0 ? (
                   <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl bg-white text-gray-400">
                     <p className="mb-2">您的问卷还是空的</p>
@@ -228,8 +258,8 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
         )}
 
         {activeTab === 'preview' && (
-          <div className="flex-1 overflow-y-auto bg-gray-100 p-8">
-            <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-lg min-h-screen border border-gray-200">
+          <div className="flex-1 overflow-y-auto bg-gray-100 p-4 sm:p-8">
+            <div className="max-w-6xl w-full mx-auto bg-white rounded-xl shadow-lg min-h-screen border border-gray-200">
               {/* Header */}
               <div className="bg-blue-600 text-white p-8 rounded-t-xl text-center">
                 <h1 className="text-3xl font-bold mb-4">{title}</h1>
@@ -282,45 +312,67 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
         )}
 
         {activeTab === 'analysis' && (
-          <div className="flex-1 bg-white p-8 overflow-y-auto">
-            <div className="max-w-4xl mx-auto">
-              <div className="flex justify-between items-center mb-8 border-b pb-4">
-                <h2 className="text-2xl font-bold text-gray-800">数据分析大屏 (模拟)</h2>
-                <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50">
-                  <Download className="w-4 h-4" /> 导出 Excel
-                </button>
+          <div className="flex-1 bg-gray-50 p-8 overflow-y-auto">
+            <div className="max-w-5xl mx-auto space-y-8">
+              {/* Header Stats */}
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <div className="flex justify-between items-center mb-6 border-b pb-4">
+                  <h2 className="text-xl font-bold text-gray-800">数据分析与完成情况报告</h2>
+                  <div className="flex items-center gap-3">
+                    {onRefresh && (
+                      <button onClick={onRefresh} className="flex items-center gap-2 px-4 py-2 border border-blue-300 text-blue-600 rounded-md hover:bg-blue-50 text-sm font-medium transition-colors">
+                        <RefreshCw className="w-4 h-4" /> 刷新数据
+                      </button>
+                    )}
+                    <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium">
+                      <Download className="w-4 h-4" /> 导出报告
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 flex flex-col items-center justify-center">
+                    <p className="text-blue-600 text-sm font-medium mb-2">收集总数 / 目标人数</p>
+                    <p className="text-3xl font-bold text-blue-900">{latestResponses.length} / {targetUsers ? targetUsers.length : '-'}</p>
+                  </div>
+                  <div className="bg-green-50 p-6 rounded-xl border border-green-100 flex flex-col items-center justify-center">
+                    <p className="text-green-600 text-sm font-medium mb-2">平均完成时间</p>
+                    <p className="text-3xl font-bold text-green-900">4分12秒</p>
+                  </div>
+                  <div className="bg-purple-50 p-6 rounded-xl border border-purple-100 flex flex-col items-center justify-center">
+                    <p className="text-purple-600 text-sm font-medium mb-2">完成率</p>
+                    <p className="text-3xl font-bold text-purple-900">
+                      {targetUsers && targetUsers.length > 0 ? ((latestResponses.length / targetUsers.length) * 100).toFixed(1) : 0}%
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-6 mb-8">
-                <div className="bg-blue-50 p-6 rounded-xl border border-blue-100">
-                  <p className="text-blue-600 text-sm font-medium mb-2">收集总数</p>
-                  <p className="text-3xl font-bold text-blue-900">1,284</p>
-                </div>
-                <div className="bg-green-50 p-6 rounded-xl border border-green-100">
-                  <p className="text-green-600 text-sm font-medium mb-2">平均完成时间</p>
-                  <p className="text-3xl font-bold text-green-900">4分12秒</p>
-                </div>
-                <div className="bg-purple-50 p-6 rounded-xl border border-purple-100">
-                  <p className="text-purple-600 text-sm font-medium mb-2">完成率</p>
-                  <p className="text-3xl font-bold text-purple-900">92.5%</p>
-                </div>
-              </div>
+              {/* Target Tracking */}
+              {targetUsers && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                  <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">目标人群填报情况追踪</h3>
+                  <div className="flex flex-wrap gap-4">
+                    {(() => {
+                      const respondedUserIds = new Set(responses.map(r => r.userId));
+                      const missingUsers = targetUsers.filter(u => !respondedUserIds.has(u.username) && !respondedUserIds.has(u.id));
+                      
+                      if (missingUsers.length === 0) {
+                        return <div className="text-green-600 font-medium w-full text-center py-4 bg-green-50 rounded">所有目标人员均已完成填报！🎉</div>;
+                      }
 
-              <div className="space-y-8">
-                {questions.filter(q => !['title', 'text', 'pagination'].includes(q.type)).map((q, idx) => (
-                  <div key={q.id} className="border rounded-xl p-6 shadow-sm">
-                    <h3 className="font-semibold text-lg mb-4 text-gray-800">{q.label}</h3>
-                    <div className="h-48 bg-gray-50 rounded flex items-center justify-center text-gray-400 border border-dashed border-gray-200">
-                      <BarChart2 className="w-8 h-8 mr-2" /> 图表分析区域占位
-                    </div>
+                      return missingUsers.map(u => (
+                        <div key={u.id} className="bg-red-50 border border-red-100 px-4 py-2 rounded-lg flex flex-col items-center">
+                          <span className="font-semibold text-gray-800">{u.name}</span>
+                          <span className="text-xs text-red-500 mt-1">未完成</span>
+                        </div>
+                      ));
+                    })()}
                   </div>
-                ))}
-                {questions.filter(q => ['radio', 'checkbox', 'rate', 'matrix'].includes(q.type)).length === 0 && (
-                  <div className="text-center text-gray-500 py-12">
-                    当前问卷没有可用于统计分析的选择题或评分题
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
+
+              {/* Question Analysis has been removed as per requirement */}
             </div>
           </div>
         )}

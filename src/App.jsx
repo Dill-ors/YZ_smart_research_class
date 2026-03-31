@@ -9,6 +9,7 @@ import ObservationForm from './pages/ObservationForm';
 import Reports from './pages/Reports';
 import Targets from './pages/Targets';
 import Users from './pages/Users';
+import BasicInfo from './pages/BasicInfo';
 import Settings from './pages/Settings';
 
 // Protected Route Component
@@ -39,6 +40,7 @@ function App() {
             <Route path="reports" element={<Reports />} />
             <Route path="targets" element={<Targets />} />
             <Route path="users" element={<Users />} />
+            <Route path="basic-info" element={<BasicInfo />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

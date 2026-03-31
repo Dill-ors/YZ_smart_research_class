@@ -4,8 +4,17 @@ import {
   Search, Shield, CheckCircle, XCircle, Key, History
 } from 'lucide-react';
 import DataService from '../services/dataService';
+import { useAuth } from '../context/AuthContext';
+
+import { Navigate } from 'react-router-dom';
 
 export default function Users() {
+  const { user } = useAuth();
+  
+  if (user?.role !== 'admin') {
+    return <Navigate to="/" replace />;
+  }
+  
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,6 +28,10 @@ export default function Users() {
   const [password, setPassword] = useState('');
   const [notifyUser, setNotifyUser] = useState(false);
   const [selectedRole, setSelectedRole] = useState('user');
+  
+  // Basic info state
+  const [schools, setSchools] = useState([]);
+  const [subjects, setSubjects] = useState([]);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -29,6 +42,9 @@ export default function Users() {
 
   useEffect(() => {
     loadUsers();
+    // Load basic info
+    setSchools(DataService.getSchools());
+    setSubjects(DataService.getSubjects());
   }, []);
 
   const filteredUsers = users.filter(u => 
@@ -75,6 +91,14 @@ export default function Users() {
       status: formData.get('status') || 'active',
       lastLogin: editingUser ? editingUser.lastLogin : '-'
     };
+
+    if (password) {
+      userData.password = password;
+    } else if (editingUser && editingUser.password) {
+      userData.password = editingUser.password;
+    } else {
+      userData.password = '123'; // Default password if not set
+    }
 
     if (editingUser) {
       await DataService.updateUser(editingUser.id, userData);
@@ -224,7 +248,12 @@ export default function Users() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">学校</label>
-                  <input name="school" defaultValue={editingUser?.school} className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+                  <select name="school" defaultValue={editingUser?.school || ''} className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">-- 请选择学校 --</option>
+                    {schools.map(s => (
+                      <option key={s.id} value={s.name}>{s.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">角色权限</label>
@@ -246,16 +275,11 @@ export default function Users() {
               {selectedRole === 'teacher' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">任教学科</label>
-                  <select name="subject" defaultValue={editingUser?.subject || '数学'} className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                    <option value="语文">语文</option>
-                    <option value="数学">数学</option>
-                    <option value="英语">英语</option>
-                    <option value="物理">物理</option>
-                    <option value="化学">化学</option>
-                    <option value="生物">生物</option>
-                    <option value="政治">政治</option>
-                    <option value="历史">历史</option>
-                    <option value="地理">地理</option>
+                  <select name="subject" defaultValue={editingUser?.subject || (subjects[0]?.name || '')} className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">-- 请选择学科 --</option>
+                    {subjects.map(s => (
+                      <option key={s.id} value={s.name}>{s.name}</option>
+                    ))}
                   </select>
                 </div>
               )}
@@ -279,6 +303,16 @@ export default function Users() {
                     生成随机密码
                   </button>
                 </div>
+                
+                {editingUser && (
+                  <div className="mb-3 text-sm text-gray-600 flex items-center">
+                    <span className="mr-2">当前密码:</span>
+                    <span className="font-mono bg-gray-100 px-2 py-1 rounded text-blue-600 font-medium tracking-wider">
+                      {editingUser.password || '123'}
+                    </span>
+                  </div>
+                )}
+
                 <div className="relative">
                   <input 
                     type="text" 

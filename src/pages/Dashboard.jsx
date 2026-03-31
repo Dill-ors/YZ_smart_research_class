@@ -22,6 +22,7 @@ import { Link } from 'react-router-dom';
 const Dashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
+  const [completionStats, setCompletionStats] = useState(null);
   const [filters, setFilters] = useState({
     school: '',
     subject: '',
@@ -29,9 +30,18 @@ const Dashboard = () => {
     timeSpan: 'all'
   });
 
+  const [schools, setSchools] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+
   useEffect(() => {
     DataService.init().then(() => {
       loadStats();
+      if (DataService.getSchools) {
+        setSchools(DataService.getSchools().map(s => s.name));
+      }
+      if (DataService.getSubjects) {
+        setSubjects(DataService.getSubjects().map(s => s.name));
+      }
     });
   }, [filters]);
 
@@ -40,12 +50,14 @@ const Dashboard = () => {
     
     // For dashboard stats, dataService will handle the isManager logic now
     const data = await DataService.getDashboardStats({ ...filters, currentUser: user });
+    const compStats = await DataService.getCompletionStats();
     
     // For recent surveys, managers should see all recent surveys, teachers/researchers only see their own
     const surveyFilters = isManager ? {} : { currentUser: user };
     const surveys = await DataService.getSurveys(surveyFilters);
     
     setStats({ ...data, recentSurveys: surveys.slice(0, 5) });
+    setCompletionStats(compStats);
   };
 
   const handleFilterChange = (key, value) => {
@@ -131,8 +143,8 @@ const Dashboard = () => {
                      value={filters.subject}
                      onChange={(e) => handleFilterChange('subject', e.target.value)}
                  >
-                     <option value="">所有学科</option>
-                     {stats.allSubjects?.map(s => <option key={s} value={s}>{s}</option>)}
+                     <option value="ALL">全部科目</option>
+                     {subjects.map(s => <option key={s} value={s}>{s}</option>)}
                  </select>
             </div>
 
@@ -162,7 +174,7 @@ const Dashboard = () => {
                      onChange={(e) => handleFilterChange('school', e.target.value)}
                  >
                      <option value="">所有学校</option>
-                     {stats.allSchools?.map(s => <option key={s} value={s}>{s}</option>)}
+                     {schools.map(s => <option key={s} value={s}>{s}</option>)}
                  </select>
             </div>
         </div>
@@ -171,10 +183,10 @@ const Dashboard = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: '调研学校数', value: stats.schoolCount, unit: '所', change: '+2', color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: '覆盖比例', value: `${stats.coverage}%`, unit: '', change: '+5%', color: 'text-green-600', bg: 'bg-green-50' },
-          { label: '调研总次数', value: stats.totalSurveys, unit: '节', change: '+12', color: 'text-purple-600', bg: 'bg-purple-50' },
-          { label: '已完成调研', value: stats.completedSurveys, unit: '节', change: '+4', color: 'text-orange-600', bg: 'bg-orange-50' },
+          { label: '调研学校数', value: stats.schoolCount, unit: '所', color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: '总体完成率', value: completionStats ? `${completionStats.overallPercentage}%` : '0%', unit: '', color: 'text-green-600', bg: 'bg-green-50' },
+          { label: '调研总次数', value: stats.totalSurveys, unit: '节', color: 'text-purple-600', bg: 'bg-purple-50' },
+          { label: '未达标人数', value: completionStats ? completionStats.incompleteUsers.length : 0, unit: '人', color: 'text-orange-600', bg: 'bg-orange-50' },
         ].map((stat, index) => (
           <div key={index} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start">
@@ -193,9 +205,8 @@ const Dashboard = () => {
               </div>
             </div>
             <div className="mt-4 flex items-center text-sm">
-              <span className="text-green-500 font-medium flex items-center">
-                {stat.change}
-                <span className="text-gray-400 ml-1">较上期</span>
+              <span className="text-gray-500 font-medium flex items-center">
+                当前统计数据
               </span>
             </div>
           </div>
@@ -210,23 +221,30 @@ const Dashboard = () => {
           
           {isManager ? (
             <div className="h-48 flex flex-col justify-center items-center text-center px-4">
-              <div className="bg-blue-50 p-4 rounded-full mb-4">
-                <Target className="w-8 h-8 text-blue-600" />
+              <div className="w-full max-w-sm">
+                <div className="flex justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-700">团队总体完成进度</span>
+                  <span className="text-sm font-bold text-blue-600">{completionStats?.overallPercentage || 0}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                  <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${completionStats?.overallPercentage || 0}%` }}></div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>总目标: {completionStats?.totalTarget || 0}</span>
+                  <span>已完成: {completionStats?.totalCompleted || 0}</span>
+                </div>
               </div>
-              <p className="text-gray-600 mb-4">
-                作为管理者，您可以在“目标管理”中查看并设定下属的听课目标。
-              </p>
               <Link 
                 to="/targets" 
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                className="mt-6 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
               >
                 前往目标管理
                 <ArrowRight className="ml-2 -mr-1 h-4 w-4" />
               </Link>
             </div>
           ) : (
-            <>
-              <div className="relative h-48 flex justify-center items-center">
+            <div className="h-48 flex flex-col justify-center">
+              <div className="relative h-32 flex justify-center items-center">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -236,8 +254,8 @@ const Dashboard = () => {
                       }
                       cx="50%"
                       cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
+                      innerRadius={50}
+                      outerRadius={70}
                       startAngle={90}
                       endAngle={-270}
                       dataKey="value"
@@ -256,61 +274,69 @@ const Dashboard = () => {
                   <span className="text-xs text-gray-500 mt-1">已完成</span>
                 </div>
               </div>
-              <div className="mt-6 flex justify-center gap-4 text-center">
+              <div className="mt-4 flex justify-center gap-6 text-center">
                   <div>
-                    <p className="text-xs text-gray-500">目标节数</p>
+                    <p className="text-xs text-gray-500 mb-1">目标节数</p>
                     <p className="text-lg font-bold text-gray-900">{targetStats.target}</p>
                   </div>
                   <div className="w-px bg-gray-200"></div>
                   <div>
-                    <p className="text-xs text-gray-500">已听节数</p>
+                    <p className="text-xs text-gray-500 mb-1">已听节数</p>
                     <p className="text-lg font-bold text-blue-600">{targetStats.completed}</p>
                   </div>
               </div>
-            </>
+            </div>
           )}
         </div>
 
         {/* Schedule */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-full flex flex-col">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-gray-900">近期听课计划</h3>
-              <button className="text-blue-600 text-sm font-medium hover:text-blue-800">全部</button>
+              <h3 className="text-lg font-bold text-gray-900">近期听课记录</h3>
+              <Link to="/observations" className="text-blue-600 text-sm font-medium hover:text-blue-800">全部</Link>
             </div>
             
             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
-              {[
-                { date: '明天', time: '09:00', title: '初二数学 - 隋老师', tag: '市北四实验', type: 'new' },
-                { date: '周五', time: '14:00', title: '初一英语 - 张老师', tag: '五十三中', type: 'review' },
-                { date: '下周一', time: '10:00', title: '初三物理 - 王老师', tag: '二实验', type: 'lab' },
-              ].map((item, idx) => (
-                <div key={idx} className="flex group">
-                  <div className="flex flex-col items-center mr-4">
-                    <div className="w-2 h-2 rounded-full bg-blue-400 mt-2"></div>
-                    <div className="w-0.5 h-full bg-gray-100 my-1 group-last:hidden"></div>
-                  </div>
-                  <div className="pb-4 flex-1">
-                    <div className="flex items-baseline mb-1">
-                      <span className="text-sm font-bold text-gray-900 mr-2">{item.date}</span>
-                      <span className="text-xs text-gray-500">{item.time}</span>
+              {stats.recentSurveys && stats.recentSurveys.length > 0 ? (
+                stats.recentSurveys.map((item, idx) => (
+                  <div key={item.id || idx} className="flex group">
+                    <div className="flex flex-col items-center mr-4">
+                      <div className="w-2 h-2 rounded-full bg-blue-400 mt-2"></div>
+                      <div className="w-0.5 h-full bg-gray-100 my-1 group-last:hidden"></div>
                     </div>
-                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 group-hover:border-blue-200 transition-colors">
-                      <p className="text-sm font-medium text-gray-800">{item.title}</p>
-                      <div className="flex gap-2 mt-2">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-white text-gray-600 border border-gray-200">
-                          {item.tag}
+                    <div className="pb-4 flex-1">
+                      <div className="flex items-baseline mb-1">
+                        <span className="text-sm font-bold text-gray-900 mr-2">{item.date || '未知日期'}</span>
+                        <span className="text-xs text-gray-500">
+                          {item.researcherName ? `${item.researcherName} (教研员)` : item.observer}
                         </span>
-                          {item.type === 'new' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700 border border-green-100">新授</span>}
                       </div>
+                      <Link to={`/observations/${item.id}`} className="block bg-gray-50 p-3 rounded-lg border border-gray-100 hover:border-blue-200 transition-colors">
+                        <p className="text-sm font-medium text-gray-800">{item.grade}{item.subject} - {item.teacher}</p>
+                        <div className="flex gap-2 mt-2 flex-wrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-white text-gray-600 border border-gray-200">
+                            {item.school}
+                          </span>
+                          {item.lesson_type === 'new' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700 border border-green-100">新授课</span>}
+                          {item.lesson_type === 'review' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-100">复习课</span>}
+                          {item.lesson_type === 'exercise' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">习题课</span>}
+                          {item.lesson_type === 'experiment' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-50 text-purple-700 border border-purple-100">实验课</span>}
+                          {item.lesson_type === 'other' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-50 text-gray-700 border border-gray-100">其它</span>}
+                        </div>
+                      </Link>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-500 text-sm">
+                  暂无近期听课记录
                 </div>
-              ))}
+              )}
             </div>
             
-            <button className="mt-4 w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm">
-              + 新建计划
-            </button>
+            <Link to="/observations/new" className="mt-4 w-full py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm text-center block">
+              + 新建记录
+            </Link>
         </div>
       </div>
 
@@ -320,30 +346,31 @@ const Dashboard = () => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h3 className="text-lg font-bold text-gray-900 mb-4">课型分布</h3>
           <div className="h-60">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={[
-                    { name: '新授课', value: 45 },
-                    { name: '复习课', value: 25 },
-                    { name: '讲评课', value: 20 },
-                    { name: '实验课', value: 10 },
-                  ]}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {COLORS.map((color, index) => (
-                    <Cell key={`cell-${index}`} fill={color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend verticalAlign="bottom" height={36}/>
-              </PieChart>
-            </ResponsiveContainer>
+            {stats.lessonTypeData && stats.lessonTypeData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={stats.lessonTypeData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {stats.lessonTypeData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" height={36}/>
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-500">
+                暂无课型数据
+              </div>
+            )}
           </div>
         </div>
 
@@ -351,23 +378,23 @@ const Dashboard = () => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <h3 className="text-lg font-bold text-gray-900 mb-4">学校覆盖情况</h3>
             <div className="space-y-4 h-60 overflow-y-auto pr-2 custom-scrollbar">
-              {[
-                { name: '市北四实验', count: 15, percent: 80, color: 'bg-blue-500' },
-                { name: '青岛五十三中', count: 8, percent: 45, color: 'bg-indigo-500' },
-                { name: '富源路小学', count: 3, percent: 20, color: 'bg-green-500' },
-                { name: '同安路小学', count: 2, percent: 15, color: 'bg-yellow-500' },
-                { name: '第二实验初中', count: 1, percent: 5, color: 'bg-red-500' },
-              ].map((school, idx) => (
-                <div key={idx}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="font-medium text-gray-700">{school.name}</span>
-                    <span className="text-gray-500">{school.count}次</span>
+              {stats.schoolCoverageData && stats.schoolCoverageData.length > 0 ? (
+                stats.schoolCoverageData.map((school, idx) => (
+                  <div key={idx}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="font-medium text-gray-700">{school.name}</span>
+                      <span className="text-gray-500">{school.count}次</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div className={`${COLORS[idx % COLORS.length].replace('#', 'bg-[#')} h-2 rounded-full transition-all duration-500`} style={{ width: `${school.percent}%`, backgroundColor: COLORS[idx % COLORS.length] }}></div>
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div className={`${school.color} h-2 rounded-full transition-all duration-500`} style={{ width: `${school.percent}%` }}></div>
-                  </div>
+                ))
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-500">
+                  暂无学校数据
                 </div>
-              ))}
+              )}
             </div>
         </div>
       </div>
@@ -380,18 +407,24 @@ const Dashboard = () => {
             <h3 className="text-lg font-bold text-gray-900">各学科调研量分布</h3>
           </div>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.subjectData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280' }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280' }} />
-                <Tooltip 
-                  cursor={{ fill: '#F3F4F6' }}
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                />
-                <Bar dataKey="count" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={40} name="调研次数" />
-              </BarChart>
-            </ResponsiveContainer>
+            {stats.subjectData && stats.subjectData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats.subjectData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280' }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280' }} />
+                  <Tooltip 
+                    cursor={{ fill: '#F3F4F6' }}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                  />
+                  <Bar dataKey="count" fill="#3B82F6" radius={[4, 4, 0, 0]} barSize={40} name="调研次数" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-500">
+                暂无学科数据
+              </div>
+            )}
           </div>
         </div>
 
@@ -401,31 +434,36 @@ const Dashboard = () => {
             <h3 className="text-lg font-bold text-gray-900">月度调研趋势</h3>
           </div>
           <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={stats.monthlyStats?.data?.map((val, idx) => ({ name: stats.monthlyStats.labels[idx], value: val })) || []}
-                margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.4}/>
-                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.05}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280' }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280' }} />
-                <Tooltip />
-                <Area 
-                  type="monotone" 
-                  dataKey="value" 
-                  stroke="#3B82F6" 
-                  strokeWidth={3} 
-                  fillOpacity={1} 
-                  fill="url(#colorValue)" 
-                  dot={{ r: 4, fill: '#3B82F6', strokeWidth: 2, stroke: '#fff' }} 
-                  activeDot={{ r: 6 }} 
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+              {stats.monthlyStats && stats.monthlyStats.data && stats.monthlyStats.data.some(v => v > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={stats.monthlyStats.data.map((val, idx) => ({ name: stats.monthlyStats.labels[idx], value: val }))}
+                  margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.05}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280' }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280' }} />
+                  <Tooltip />
+                  <Area 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#3B82F6" 
+                    strokeWidth={3}
+                    fillOpacity={1} 
+                    fill="url(#colorValue)" 
+                    name="调研次数"
+                  />
+                </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-500">
+                  暂无趋势数据
+                </div>
+              )}
           </div>
         </div>
       </div>
@@ -461,9 +499,9 @@ const Dashboard = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <div className="flex items-center">
                       <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center text-xs text-blue-600 font-bold mr-2">
-                        {survey.observer?.[0] || 'U'}
+                        {(survey.researcherName || survey.observer)?.[0] || 'U'}
                       </div>
-                      {survey.observer}
+                      {survey.researcherName ? `${survey.researcherName} (教研员)` : survey.observer}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{survey.date}</td>

@@ -1,31 +1,14 @@
-const puppeteer = require('puppeteer');
+const assert = require('assert');
 
-(async () => {
-  const browser = await puppeteer.launch({ headless: true });
-  const page = await browser.newPage();
-  
-  await page.goto('http://localhost:5174/smart_reserch/login');
-  
-  // Login as admin
-  await page.waitForSelector('input[name="username"]');
-  await page.type('input[name="username"]', 'admin');
-  await page.type('input[name="password"]', '123');
-  await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 5000 }).catch(() => {}),
-      page.click('button[type="submit"]')
-  ]);
-  
-  // Wait a bit for auth state to persist
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Go to observations
-  await page.goto('http://localhost:5174/smart_reserch/observations');
-  await page.waitForSelector('h1');
-  
-  // Create a new observation
-  await page.goto('http://localhost:5174/smart_reserch/observations/new');
-  await page.waitForSelector('input');
-  
-  // Actually, let's just check the APIs via dataService
-  await browser.close();
-})();
+function testPermissions(allowedRoles, allowedUsers, userRole, userId, username) {
+  const noPermissionsSet = (!allowedRoles || allowedRoles.length === 0) && (!allowedUsers || allowedUsers.length === 0);
+  const hasRoleAccess = allowedRoles && allowedRoles.includes(userRole);
+  const hasUserAccess = allowedUsers && (allowedUsers.includes(userId) || allowedUsers.includes(username));
+  const canFill = false || noPermissionsSet || hasRoleAccess || hasUserAccess;
+  return !!canFill;
+}
+
+console.log("Empty permissions, teacher:", testPermissions(undefined, undefined, 'teacher', 'u6', 'teacher2'));
+console.log("Only user u5, user u5:", testPermissions(undefined, ['u5'], 'teacher', 'u5', 'teacher1'));
+console.log("Only user u5, user u6 (other teacher):", testPermissions(undefined, ['u5'], 'teacher', 'u6', 'teacher2'));
+console.log("Role teacher, user u5, user u6:", testPermissions(['teacher'], ['u5'], 'teacher', 'u6', 'teacher2'));

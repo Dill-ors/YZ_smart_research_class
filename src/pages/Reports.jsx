@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, Plus, BarChart2, CheckCircle, Clock, 
-  Settings, Trash2, Edit3, XCircle, RotateCcw, Activity 
+  Settings, Trash2, Edit3, XCircle, RotateCcw, Activity,
+  Download, Upload
 } from 'lucide-react';
 import SurveyEngine from '../components/SurveyEngine';
 import SurveyPublishModal from '../components/SurveyPublishModal';
@@ -17,11 +18,76 @@ export default function Reports() {
   const [activeTab, setActiveTab] = useState('list'); // list, create, edit, board
   const [currentSurvey, setCurrentSurvey] = useState(null);
   
+  const [filterTimeType, setFilterTimeType] = useState('single');
+  const [filterTime, setFilterTime] = useState('');
+  const [filterTimeEnd, setFilterTimeEnd] = useState('');
+  const [filterSchool, setFilterSchool] = useState('');
+  
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [surveyToPublish, setSurveyToPublish] = useState(null);
 
   const [showLogsModal, setShowLogsModal] = useState(false);
   const [logs, setLogs] = useState([]);
+  const [schools, setSchools] = useState([]);
+  
+  const fileInputRef = useRef(null);
+
+  const handleExportSurvey = (report) => {
+    try {
+      const dataStr = JSON.stringify(report, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `survey_template_${report.title || 'export'}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('导出失败');
+    }
+  };
+
+  const handleImportClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleImportSurvey = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const importedData = JSON.parse(event.target.result);
+        
+        const newSurvey = {
+          ...importedData,
+          id: Date.now().toString(),
+          title: importedData.title ? `${importedData.title} (导入)` : '导入的问卷',
+          status: 'draft',
+          created_at: new Date().toISOString().split('T')[0],
+          publishConfig: null
+        };
+
+        await DataService.saveReport(newSurvey);
+        setReports(prev => [newSurvey, ...prev]);
+        alert('导入成功！');
+      } catch (error) {
+        console.error('Import Error:', error);
+        alert('导入失败，请检查文件格式是否正确。');
+      }
+      
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -33,7 +99,19 @@ export default function Reports() {
       setLoading(false);
     };
     loadData();
-  }, []);
+    if (DataService.getSchools) {
+      setSchools(DataService.getSchools().map(s => s.name));
+    }
+  }, [user]);
+
+  // Refetch responses when entering board mode to ensure latest data
+  useEffect(() => {
+    if (activeTab === 'board') {
+      DataService.getResponses().then(fetchedResponses => {
+        setAllResponses(fetchedResponses);
+      });
+    }
+  }, [activeTab]);
 
   const addLog = (surveyId, action, details) => {
     const newLog = {
@@ -155,6 +233,7 @@ export default function Reports() {
           onSave={handleSaveSurvey} 
           onSubmit={handleSubmitSurvey}
           onCancel={() => { setActiveTab('list'); setCurrentSurvey(null); }} 
+          onRefresh={() => DataService.getResponses().then(setAllResponses)}
           responses={responses}
           user={user}
         />
@@ -179,7 +258,7 @@ export default function Reports() {
     );
   }
 
-  const visibleReports = hasPermission(user, 'canModifyStructure') || hasPermission(user, 'canViewAll') 
+  const visibleReports = (hasPermission(user, 'canModifyStructure') || hasPermission(user, 'canViewAll') 
     ? reports 
     : reports.filter(r => {
         if (r.status !== 'published') return false;
@@ -197,14 +276,98 @@ export default function Reports() {
             return false;
         }
         return true;
-      });
+    })).filter(r => {
+        let match = true;
+        if (filterTime || filterTimeEnd) {
+            const pubConf = r.publishConfig;
+            if (!pubConf) {
+                match = false;
+            } else {
+                const rStart = pubConf.surveyTimeType === 'range' ? pubConf.surveyTime : pubConf.surveyTime;
+                const rEnd = pubConf.surveyTimeType === 'range' ? pubConf.surveyTimeEnd : pubConf.surveyTime;
+                
+                if (filterTimeType === 'single') {
+                    if (filterTime && (filterTime < rStart || filterTime > rEnd)) match = false;
+                } else {
+                    if (filterTime && rEnd < filterTime) match = false;
+                    if (filterTimeEnd && rStart > filterTimeEnd) match = false;
+                }
+            }
+        }
+        if (filterSchool && r.publishConfig?.surveySchool !== filterSchool) match = false;
+        return match;
+    });
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">问卷中心</h1>
+        <div className="flex items-center gap-6">
+          <h1 className="text-2xl font-bold text-gray-800">集中调研</h1>
+          <div className="flex gap-4 items-center">
+            <div className="flex items-center">
+              <label className="text-sm text-gray-600 mr-2">调研时间:</label>
+              <select 
+                value={filterTimeType}
+                onChange={(e) => {
+                  setFilterTimeType(e.target.value);
+                  if (e.target.value === 'single') setFilterTimeEnd('');
+                }}
+                className="border border-gray-300 rounded text-sm py-1 px-2 mr-2"
+              >
+                <option value="single">具体某一天</option>
+                <option value="range">时间段</option>
+              </select>
+              <input 
+                type="date" 
+                value={filterTime} 
+                onChange={(e) => setFilterTime(e.target.value)}
+                className="border border-gray-300 rounded text-sm py-1 px-2"
+              />
+              {filterTimeType === 'range' && (
+                <>
+                  <span className="mx-2 text-gray-500 text-sm">至</span>
+                  <input 
+                    type="date" 
+                    value={filterTimeEnd} 
+                    onChange={(e) => setFilterTimeEnd(e.target.value)}
+                    className="border border-gray-300 rounded text-sm py-1 px-2"
+                  />
+                </>
+              )}
+            </div>
+            <div>
+              <label className="text-sm text-gray-600 mr-2">调研学校:</label>
+              <select 
+                value={filterSchool} 
+                onChange={(e) => setFilterSchool(e.target.value)}
+                className="border border-gray-300 rounded text-sm py-1 px-2"
+              >
+                <option value="">全部学校</option>
+                {schools.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            {(filterTime || filterTimeEnd || filterSchool) && (
+              <button 
+                onClick={() => { setFilterTime(''); setFilterTimeEnd(''); setFilterTimeType('single'); setFilterSchool(''); }}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                清除筛选
+              </button>
+            )}
+          </div>
+        </div>
         {hasPermission(user, 'canModifyStructure') && (
           <div className="flex gap-3">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              style={{ display: 'none' }} 
+              accept=".json" 
+              onChange={handleImportSurvey} 
+            />
+            <button onClick={handleImportClick} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 flex items-center">
+              <Upload className="w-4 h-4 mr-2" /> 导入问卷
+            </button>
             <button onClick={() => setShowLogsModal(true)} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 flex items-center">
               <Activity className="w-4 h-4 mr-2" /> 操作日志
             </button>
@@ -225,6 +388,7 @@ export default function Reports() {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">标题</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">分类</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">调研学校</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">收集数量</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间</th>
@@ -233,7 +397,7 @@ export default function Reports() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr><td colSpan="6" className="px-6 py-4 text-center text-gray-500">加载中...</td></tr>
+                <tr><td colSpan="7" className="px-6 py-4 text-center text-gray-500">加载中...</td></tr>
               ) : visibleReports.map((report) => (
                 <tr key={report.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -243,11 +407,23 @@ export default function Reports() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{report.category}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{report.publishConfig?.surveySchool || '-'}</td>
                   <td className="px-6 py-4 whitespace-nowrap">{renderStatus(report.status)}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{report.response_count} 份</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {(() => {
+                      const surveyResponses = allResponses.filter(r => r.surveyId === report.id);
+                      const uniqueUsers = new Set(surveyResponses.map(r => r.userId));
+                      return uniqueUsers.size;
+                    })()} 人已完成
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{report.created_at}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex justify-end space-x-3">
+                      {hasPermission(user, 'canModifyStructure') && (
+                        <button onClick={() => handleExportSurvey(report)} className="text-gray-600 hover:text-gray-900" title="导出问卷">
+                          <Download className="w-4 h-4" />
+                        </button>
+                      )}
                       {hasPermission(user, 'canModifyStructure') && report.status === 'draft' && (
                         <>
                           <button onClick={() => handleEdit(report)} className="text-blue-600 hover:text-blue-900" title="编辑问卷"><Edit3 className="w-4 h-4" /></button>
@@ -256,12 +432,15 @@ export default function Reports() {
                       )}
                       {hasPermission(user, 'canModifyStructure') && report.status === 'published' && (
                         <>
-                          <button onClick={() => handleStatusChange(report.id, 'recalled', '撤回问卷')} className="text-yellow-600 hover:text-yellow-900" title="撤回未结束的问卷"><RotateCcw className="w-4 h-4" /></button>
+                          <button onClick={() => handleStatusChange(report.id, 'draft', '撤回问卷')} className="text-yellow-600 hover:text-yellow-900" title="撤回未结束的问卷"><RotateCcw className="w-4 h-4" /></button>
                           <button onClick={() => handleStatusChange(report.id, 'closed', '提前收卷')} className="text-red-600 hover:text-red-900" title="手动收卷"><XCircle className="w-4 h-4" /></button>
                         </>
                       )}
                       {hasPermission(user, 'canModifyStructure') && report.status === 'recalled' && (
-                        <button onClick={() => handleEdit(report)} className="text-blue-600 hover:text-blue-900" title="再编辑"><Edit3 className="w-4 h-4" /></button>
+                        <>
+                          <button onClick={() => handleEdit(report)} className="text-blue-600 hover:text-blue-900" title="再编辑"><Edit3 className="w-4 h-4" /></button>
+                          <button onClick={() => openPublishModal(report)} className="text-green-600 hover:text-green-900" title="发布"><CheckCircle className="w-4 h-4" /></button>
+                        </>
                       )}
                       {(report.status === 'published' || report.status === 'closed') && (
                         <button onClick={() => { setCurrentSurvey(report); setActiveTab('board'); }} className="text-purple-600 hover:text-purple-900" title="数据看板">

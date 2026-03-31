@@ -180,38 +180,55 @@ const DataService = {
   },
 
   async getSurveys(filters = {}) {
-      let surveys = await this._getAllSurveysRaw();
-      
-      if (filters.currentUser && (filters.currentUser.role === 'teacher' || filters.currentUser.role === 'district_researcher')) {
-          surveys = surveys.filter(s => {
-              // If it's explicitly assigned to them
-              if (s.publishConfig && s.publishConfig.target) {
-                  const target = s.publishConfig.target;
-                  if (target.type === 'all') return true;
-                  
-                  const roleMap = {
-                    'teacher': '教师',
-                    'district_researcher': '区调研员'
-                  };
-                  const roleName = roleMap[filters.currentUser.role];
+        let surveys = await this._getAllSurveysRaw();
+        
+        if (filters.currentUser && (filters.currentUser.role === 'teacher' || filters.currentUser.role === 'district_researcher')) {
+            surveys = surveys.filter(s => {
+                // If it's explicitly assigned to them
+                if (s.publishConfig && s.publishConfig.target) {
+                    const target = s.publishConfig.target;
+                    if (target.type === 'all') return true;
+                    
+                    const roleMap = {
+                      'teacher': '教师',
+                      'district_researcher': '区调研员'
+                    };
+                    const roleName = roleMap[filters.currentUser.role];
 
-                  if (target.type === 'role' && target.roles && target.roles.includes(roleName)) return true;
-                  if (target.type === 'school' && target.schools && target.schools.includes(filters.currentUser.school)) return true;
-                  if (target.type === 'user' && target.userIds && target.userIds.includes(filters.currentUser.id)) return true;
-              }
-              
-              // Also if they are the observer, they can see it (in case they somehow created it or are marked as observer)
-              if (s.observer === filters.currentUser.name) return true;
-              
-              return false;
-          });
-      }
+                    if (target.type === 'role' && target.roles && target.roles.includes(roleName)) return true;
+                    if (target.type === 'school' && target.schools && target.schools.includes(filters.currentUser.school)) return true;
+                    if (target.type === 'user' && target.userIds && target.userIds.includes(filters.currentUser.id)) return true;
+                    if (target.type === 'group' && target.groupIds) {
+                        const groups = DataService.getUserGroups ? DataService.getUserGroups() : [];
+                        const userGroups = groups.filter(g => target.groupIds.includes(g.id) && g.members && g.members.includes(filters.currentUser.id));
+                        if (userGroups.length > 0) return true;
+                    }
+                }
+                
+                // Also if they are the observer, they can see it (in case they somehow created it or are marked as observer)
+                if (s.observer === filters.currentUser.name) return true;
+                
+                return false;
+            });
+        }
 
-      if (filters.school) surveys = surveys.filter(s => s.school === filters.school);
-      if (filters.subject) surveys = surveys.filter(s => s.subject === filters.subject);
-      if (filters.observer) surveys = surveys.filter(s => s.observer === filters.observer);
-      
-      if (filters.timeSpan && filters.timeSpan !== 'all') {
+        if (filters.search) {
+            const search = filters.search.toLowerCase();
+            surveys = surveys.filter(s => 
+                (s.school && s.school.toLowerCase().includes(search)) ||
+                (s.teacher && s.teacher.toLowerCase().includes(search)) ||
+                (s.subject && s.subject.toLowerCase().includes(search)) ||
+                (s.observer && s.observer.toLowerCase().includes(search))
+            );
+        }
+
+        if (filters.school && filters.school !== 'ALL') surveys = surveys.filter(s => s.school === filters.school);
+        if (filters.subject && filters.subject !== 'ALL') surveys = surveys.filter(s => s.subject === filters.subject);
+        if (filters.observer && filters.observer !== 'ALL') surveys = surveys.filter(s => s.observer === filters.observer);
+        if (filters.lesson_type && filters.lesson_type !== 'ALL') surveys = surveys.filter(s => s.lesson_type === filters.lesson_type);
+        if (filters.survey_mode && filters.survey_mode !== 'ALL') surveys = surveys.filter(s => s.survey_mode === filters.survey_mode);
+        
+        if (filters.timeSpan && filters.timeSpan !== 'all') {
           const now = new Date();
           let startDate = new Date();
           
@@ -261,7 +278,12 @@ const DataService = {
 
   async getReports(filters = {}) {
     try {
-      const res = await fetch(`${getApiBase()}/reports`);
+      const res = await fetch(`${getApiBase()}/reports?_t=${Date.now()}`, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
       let reports = await res.json();
       
       if (filters.currentUser && (filters.currentUser.role === 'teacher' || filters.currentUser.role === 'district_researcher')) {
@@ -279,6 +301,11 @@ const DataService = {
                   if (target.type === 'role' && target.roles && target.roles.includes(roleName)) return true;
                   if (target.type === 'school' && target.schools && target.schools.includes(filters.currentUser.school)) return true;
                   if (target.type === 'user' && target.userIds && target.userIds.includes(filters.currentUser.id)) return true;
+                  if (target.type === 'group' && target.groupIds) {
+                      const groups = DataService.getUserGroups ? DataService.getUserGroups() : [];
+                      const userGroups = groups.filter(g => target.groupIds.includes(g.id) && g.members && g.members.includes(filters.currentUser.id));
+                      if (userGroups.length > 0) return true;
+                  }
               }
               return false;
           });
@@ -308,7 +335,12 @@ const DataService = {
 
   async getResponses() {
     try {
-      const res = await fetch(`${getApiBase()}/responses`);
+      const res = await fetch(`${getApiBase()}/responses?_t=${Date.now()}`, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
       return await res.json();
     } catch (e) {
       console.error(e);
@@ -350,6 +382,47 @@ const DataService = {
     }
   },
 
+  async deleteTarget(id) {
+    try {
+      await fetch(`${getApiBase()}/targets/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Error deleting target:', e);
+      throw e;
+    }
+  },
+
+  async getResearcherProgress() {
+      const users = await this.getAllUsers();
+      const researchers = users.filter(u => u.role === 'district_researcher');
+      const targets = await this.getTargets();
+      const surveys = await this._getAllSurveysRaw();
+
+      const progressData = researchers.map(researcher => {
+          const userTarget = targets.find(t => t.userId === researcher.username) || { targetValue: 0 };
+          const userSurveys = surveys.filter(s => s.researcherName === researcher.name || s.observer === researcher.name);
+          
+          // Calculate monthly counts
+          const monthlyCounts = {};
+          userSurveys.forEach(s => {
+              if (s.date) {
+                  const month = s.date.substring(0, 7); // YYYY-MM
+                  monthlyCounts[month] = (monthlyCounts[month] || 0) + 1;
+              }
+          });
+
+          return {
+              id: researcher.id,
+              name: researcher.name,
+              subject: researcher.subject || '全科',
+              target: userTarget.targetValue,
+              completed: userSurveys.length,
+              monthlyCounts
+          };
+      });
+
+      return progressData;
+  },
+
   async setTarget(targetData) {
     const targets = await this.getTargets();
     const existing = targets.find(t => t.userId === targetData.userId);
@@ -371,15 +444,16 @@ const DataService = {
 
   async getDashboardStats(filters = {}) {
       // Remove currentUser from filters to get global stats for managers
-      // The Dashboard component should only pass currentUser if it wants filtered stats.
-      // But the user requested "数据看板中的所有数据是根据总数据统计的" for managers.
-      // Actually, Dashboard currently passes currentUser for everyone.
-      // Let's modify this to ignore currentUser for managers.
       const isManager = filters.currentUser && ['admin', 'district_director', 'principal'].includes(filters.currentUser.role);
       
       const statsFilters = { ...filters };
       if (isManager) {
           delete statsFilters.currentUser; // Managers see all data
+      }
+
+      // If subject is ALL, we shouldn't filter by subject
+      if (statsFilters.subject === 'ALL') {
+          delete statsFilters.subject;
       }
 
       const surveys = await this.getSurveys(statsFilters);
@@ -389,18 +463,53 @@ const DataService = {
       const allSchools = [...new Set(accessibleSurveys.map(s => s.school).filter(Boolean))];
       const allSubjects = [...new Set(accessibleSurveys.map(s => s.subject).filter(Boolean))];
 
-      const schoolSet = new Set(surveys.map(s => s.school));
+      const schoolSet = new Set(surveys.map(s => s.school).filter(Boolean));
       
       const subjectCounts = {};
+      const lessonTypeCounts = {};
+      const schoolCounts = {};
+
       surveys.forEach(s => {
-          const subj = s.subject || '未分类';
-          subjectCounts[subj] = (subjectCounts[subj] || 0) + 1;
+          if (s.subject) {
+            subjectCounts[s.subject] = (subjectCounts[s.subject] || 0) + 1;
+          }
+          
+          if (s.lesson_type) {
+            let typeName = s.lesson_type;
+            const typeMap = {
+              'new': '新授课',
+              'review': '复习课',
+              'exercise': '习题课',
+              'experiment': '实验课',
+              'other': '其它'
+            };
+            typeName = typeMap[s.lesson_type] || s.lesson_type;
+            lessonTypeCounts[typeName] = (lessonTypeCounts[typeName] || 0) + 1;
+          }
+
+          if (s.school) {
+            schoolCounts[s.school] = (schoolCounts[s.school] || 0) + 1;
+          }
       });
 
       const data = Object.keys(subjectCounts).map(key => ({
         name: key,
         count: subjectCounts[key]
       }));
+
+      const lessonTypeData = Object.keys(lessonTypeCounts).map(key => ({
+        name: key,
+        value: lessonTypeCounts[key]
+      }));
+
+      const totalSchoolCount = surveys.filter(s => s.school).length;
+      const schoolCoverageData = Object.keys(schoolCounts)
+        .map(key => ({
+          name: key,
+          count: schoolCounts[key],
+          percent: totalSchoolCount > 0 ? Math.round((schoolCounts[key] / totalSchoolCount) * 100) : 0
+        }))
+        .sort((a, b) => b.count - a.count);
 
       const monthlyStats = {
           labels: [],
@@ -421,17 +530,93 @@ const DataService = {
           monthlyStats.data.push(count);
       }
 
+      const totalSystemSchools = this.getSchools().length;
       return {
           schoolCount: schoolSet.size,
           totalSurveys: surveys.length,
           completedSurveys: surveys.filter(s => s.status === 'completed').length,
-          coverage: schoolSet.size > 0 ? Math.round((schoolSet.size / 6) * 100) : 0,
+          coverage: schoolSet.size > 0 && totalSystemSchools > 0 ? Math.round((schoolSet.size / totalSystemSchools) * 100) : 0,
           subjectData: data,
+          lessonTypeData,
+          schoolCoverageData,
           monthlyStats,
           allObservers,
           allSchools,
           allSubjects
       };
+  },
+
+  async getCompletionStats() {
+      const targets = await this.getTargets();
+      const users = await this.getAllUsers();
+      const surveys = await this._getAllSurveysRaw();
+      
+      const completionData = targets.map(target => {
+          const user = users.find(u => u.username === target.userId) || { name: target.userId };
+          const userSurveys = surveys.filter(s => s.observer === user.name && s.status === 'completed');
+          const completedCount = userSurveys.length;
+          const targetCount = parseInt(target.targetValue) || 0;
+          const percentage = targetCount > 0 ? Math.round((completedCount / targetCount) * 100) : 0;
+          
+          return {
+              userId: target.userId,
+              name: user.name,
+              targetCount,
+              completedCount,
+              percentage,
+              isCompleted: completedCount >= targetCount
+          };
+      });
+
+      const incompleteUsers = completionData.filter(d => !d.isCompleted);
+      
+      const totalTarget = completionData.reduce((sum, d) => sum + d.targetCount, 0);
+      const totalCompleted = completionData.reduce((sum, d) => sum + d.completedCount, 0);
+      const overallPercentage = totalTarget > 0 ? Math.round((totalCompleted / totalTarget) * 100) : 0;
+
+      return {
+          overallPercentage,
+          totalTarget,
+          totalCompleted,
+          incompleteUsers,
+          completionData
+      };
+  },
+
+  getSchools() {
+      const data = localStorage.getItem('schools');
+      return data ? JSON.parse(data) : [
+          { id: '1', name: '市北四实验', region: '市北区', type: '高中' },
+          { id: '2', name: '青岛五十三中', region: '市北区', type: '初中' }
+      ];
+  },
+
+  saveSchools(schools) {
+      localStorage.setItem('schools', JSON.stringify(schools));
+  },
+
+  getSubjects() {
+      const data = localStorage.getItem('subjects');
+      return data ? JSON.parse(data) : [
+          { id: '1', name: '语文', code: 'YU', type: '通用' },
+          { id: '2', name: '数学', code: 'SHU', type: '通用' },
+          { id: '3', name: '英语', code: 'YING', type: '通用' },
+          { id: '4', name: '物理', code: 'WU', type: '通用' },
+          { id: '5', name: '化学', code: 'HUA', type: '通用' }
+      ];
+  },
+
+  saveSubjects(subjects) {
+      localStorage.setItem('subjects', JSON.stringify(subjects));
+  },
+
+  getUserGroups() {
+      const data = localStorage.getItem('userGroups');
+      return data ? JSON.parse(data) : [];
+  },
+
+  saveUserGroups(groups) {
+      localStorage.setItem('userGroups', JSON.stringify(groups));
   }
 };
 

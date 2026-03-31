@@ -1,9 +1,23 @@
-import React from 'react';
-import { X, Plus, Trash2, Shield } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Plus, Trash2, Shield, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import DataService from '../../services/dataService';
 
-export default function PropertyPanel({ selectedQuestion, updateQuestion, onClose }) {
+export default function PropertyPanel({ selectedQuestion, updateQuestion, onClose, disablePermissions }) {
   const { user } = useAuth();
+  const [allUsers, setAllUsers] = useState([]);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const users = await DataService.getAllUsers();
+        setAllUsers(users);
+      } catch (e) {
+        console.error("Failed to fetch users", e);
+      }
+    };
+    fetchUsers();
+  }, []);
   
   if (!selectedQuestion) {
     return (
@@ -57,7 +71,7 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
     <div className="w-80 bg-white border-l shadow-sm flex flex-col h-full">
       <div className="p-4 border-b flex justify-between items-center bg-gray-50">
         <h3 className="font-bold text-gray-700">属性配置</h3>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+        <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
           <X className="w-5 h-5" />
         </button>
       </div>
@@ -65,7 +79,7 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         
         {/* Role Permissions (Only visible to admin-level roles) */}
-        {user?.role && ['admin', 'district_director', 'principal'].includes(user.role) && !['title', 'text', 'pagination'].includes(type) && (
+        {!disablePermissions && user?.role && ['admin', 'district_director', 'principal'].includes(user.role) && !['title', 'text', 'pagination'].includes(type) && (
           <div className="bg-blue-50 -mx-4 px-4 py-4 border-y border-blue-100 mb-6">
             <label className="flex items-center text-sm font-semibold text-blue-800 mb-3">
               <Shield className="w-4 h-4 mr-2" /> 填写权限控制
@@ -83,6 +97,41 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
                   <span className="text-sm text-gray-700">{role.label}</span>
                 </label>
               ))}
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-blue-200">
+              <label className="flex items-center text-sm font-semibold text-blue-800 mb-2">
+                <User className="w-4 h-4 mr-2" /> 指定具体人员
+              </label>
+              <p className="text-xs text-blue-600 mb-2">精确指定到具体人员。注意：若勾选了具体人员，则该题仅限这些指定人员填写（上方勾选的群体角色会被覆盖）。</p>
+              
+              <div className="max-h-40 overflow-y-auto border border-blue-200 bg-white rounded p-2 space-y-1">
+                {allUsers.length === 0 ? (
+                  <div className="text-xs text-gray-400 text-center py-2">加载中...</div>
+                ) : (
+                  allUsers.map(u => {
+                    const roleLabel = ROLES.find(r => r.value === u.role)?.label || u.role;
+                    const suffix = u.school ? `${u.school} - ${roleLabel}` : roleLabel;
+                    return (
+                      <label key={u.id} className="flex items-center space-x-2 p-1 hover:bg-blue-50 rounded cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={(props.allowedUsers || []).includes(u.id)}
+                          onChange={() => {
+                            const currentUsers = props.allowedUsers || [];
+                            const newUsers = currentUsers.includes(u.id)
+                              ? currentUsers.filter(id => id !== u.id)
+                              : [...currentUsers, u.id];
+                            handleChange('allowedUsers', newUsers);
+                          }}
+                          className="text-blue-600 focus:ring-blue-500 rounded h-4 w-4"
+                        />
+                        <span className="text-sm text-gray-700">{u.name} <span className="text-xs text-gray-400">({suffix})</span></span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -128,43 +177,7 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
           </div>
         )}
 
-        {/* Common: Permission Roles */}
-        {type !== 'title' && type !== 'text' && type !== 'pagination' && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">填写权限 (留空则所有角色可填)</label>
-            <div className="flex flex-col gap-2 mt-2">
-              {['teacher', 'district_researcher', 'principal', 'admin', 'district_director'].map(role => {
-                const checked = props.allowedRoles?.includes(role) || false;
-                const roleNames = {
-                  teacher: '教师',
-                  district_researcher: '区调研员',
-                  principal: '校长',
-                  admin: '管理员',
-                  district_director: '区主任'
-                };
-                return (
-                  <label key={role} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                    <input 
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        let newRoles = props.allowedRoles || [];
-                        if (e.target.checked) {
-                          newRoles = [...newRoles, role];
-                        } else {
-                          newRoles = newRoles.filter(r => r !== role);
-                        }
-                        handleChange('allowedRoles', newRoles);
-                      }}
-                      className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
-                    />
-                    {roleNames[role]}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        )}
+
 
         {/* Specific: Title */}
         {type === 'title' && (
@@ -244,12 +257,13 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
                     onChange={(e) => handleArrayChange('options', idx, e.target.value)}
                     className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   />
-                  <button onClick={() => handleRemoveArrayItem('options', idx)} className="text-gray-400 hover:text-red-500">
+                  <button type="button" onClick={() => handleRemoveArrayItem('options', idx)} className="text-gray-400 hover:text-red-500">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               ))}
               <button 
+                type="button"
                 onClick={() => handleAddArrayItem('options', '新选项')}
                 className="text-blue-500 text-sm flex items-center mt-2 hover:underline"
               >
@@ -295,12 +309,12 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
                       onChange={(e) => handleArrayChange('rows', idx, e.target.value)}
                       className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     />
-                    <button onClick={() => handleRemoveArrayItem('rows', idx)} className="text-gray-400 hover:text-red-500">
+                    <button type="button" onClick={() => handleRemoveArrayItem('rows', idx)} className="text-gray-400 hover:text-red-500">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
-                <button onClick={() => handleAddArrayItem('rows', '新行')} className="text-blue-500 text-sm flex items-center mt-2 hover:underline">
+                <button type="button" onClick={() => handleAddArrayItem('rows', '新行')} className="text-blue-500 text-sm flex items-center mt-2 hover:underline">
                   <Plus className="w-4 h-4 mr-1" /> 添加行
                 </button>
               </div>
@@ -316,12 +330,12 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
                       onChange={(e) => handleArrayChange('cols', idx, e.target.value)}
                       className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                     />
-                    <button onClick={() => handleRemoveArrayItem('cols', idx)} className="text-gray-400 hover:text-red-500">
+                    <button type="button" onClick={() => handleRemoveArrayItem('cols', idx)} className="text-gray-400 hover:text-red-500">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 ))}
-                <button onClick={() => handleAddArrayItem('cols', '新列')} className="text-blue-500 text-sm flex items-center mt-2 hover:underline">
+                <button type="button" onClick={() => handleAddArrayItem('cols', '新列')} className="text-blue-500 text-sm flex items-center mt-2 hover:underline">
                   <Plus className="w-4 h-4 mr-1" /> 添加列
                 </button>
               </div>

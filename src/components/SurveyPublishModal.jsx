@@ -6,23 +6,45 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
   const [publishType, setPublishType] = useState('immediate'); // immediate, scheduled
   const [scheduleTime, setScheduleTime] = useState('');
   
-  const [targetType, setTargetType] = useState('all'); // all, role, school, user
+  const [surveyTimeType, setSurveyTimeType] = useState('single'); // single, range
+  const [surveyTime, setSurveyTime] = useState(new Date().toISOString().split('T')[0]);
+  const [surveyTimeEnd, setSurveyTimeEnd] = useState(new Date().toISOString().split('T')[0]);
+  const [surveySchool, setSurveySchool] = useState('');
+  const [surveyResearchers, setSurveyResearchers] = useState([]);
+  
+  const [targetType, setTargetType] = useState('all'); // all, role, school, user, group
   const [selectedRoles, setSelectedRoles] = useState([]);
   const [selectedSchools, setSelectedSchools] = useState([]);
   const [selectedUsers, setSelectedUsers] = useState([]);
+  const [selectedGroups, setSelectedGroups] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
+  const [allGroups, setAllGroups] = useState([]);
   const [subjectFilter, setSubjectFilter] = useState('');
+  
+  const [schools, setSchools] = useState([]);
+  const [subjects, setSubjects] = useState([]);
 
   const ROLES = ['教师', '区调研员', '区主任', '校长'];
-  const SCHOOLS = ['青岛五十三中', '市北实验初中', '青岛四中', '市北四实验'];
-  const SUBJECTS = ['全部', '语文', '数学', '英语', '物理', '化学', '生物', '政治', '历史', '地理'];
 
   useEffect(() => {
-    const fetchUsers = async () => {
+    const fetchData = async () => {
       const users = await DataService.getAllUsers();
       setAllUsers(users);
+      
+      if (DataService.getUserGroups) {
+        const groups = DataService.getUserGroups();
+        setAllGroups(groups);
+      }
+      
+      if (DataService.getSchools) {
+        setSchools(DataService.getSchools().map(s => s.name));
+      }
+      
+      if (DataService.getSubjects) {
+        setSubjects(['全部', ...DataService.getSubjects().map(s => s.name)]);
+      }
     };
-    fetchUsers();
+    fetchData();
   }, []);
 
   const toggleSelection = (item, list, setList) => {
@@ -45,11 +67,17 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
     const publishConfig = {
       publishType,
       scheduleTime: publishType === 'scheduled' ? scheduleTime : new Date().toISOString(),
+      surveyTimeType,
+      surveyTime,
+      surveyTimeEnd: surveyTimeType === 'range' ? surveyTimeEnd : null,
+      surveySchool,
+      surveyResearchers,
       target: {
         type: targetType,
         roles: selectedRoles,
         schools: selectedSchools,
-        userIds: selectedUsers
+        userIds: selectedUsers,
+        groupIds: selectedGroups
       }
     };
 
@@ -69,6 +97,77 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
         </div>
 
         <div className="space-y-6">
+          {/* Survey Attributes */}
+          <div>
+            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Tag className="w-5 h-5 text-blue-500" /> 问卷属性设置
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-md border">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">调研时间</label>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select 
+                    value={surveyTimeType}
+                    onChange={(e) => setSurveyTimeType(e.target.value)}
+                    className="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 w-full sm:w-32"
+                  >
+                    <option value="single">具体某一天</option>
+                    <option value="range">阶段时间</option>
+                  </select>
+                  <div className="flex items-center gap-2 flex-1">
+                    <input 
+                      type="date" 
+                      value={surveyTime}
+                      onChange={(e) => setSurveyTime(e.target.value)}
+                      className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    {surveyTimeType === 'range' && (
+                      <>
+                        <span className="text-gray-500">至</span>
+                        <input 
+                          type="date" 
+                          value={surveyTimeEnd}
+                          onChange={(e) => setSurveyTimeEnd(e.target.value)}
+                          className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">调研学校</label>
+                <select 
+                  value={surveySchool}
+                  onChange={(e) => setSurveySchool(e.target.value)}
+                  className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">请选择学校</option>
+                  {schools.map(school => (
+                    <option key={school} value={school}>{school}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">参与调研教研员</label>
+                <div className="flex flex-wrap gap-2">
+                  {researchers.map(r => (
+                    <label key={r.id} className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1 border rounded-full text-sm">
+                      <input 
+                        type="checkbox" 
+                        checked={surveyResearchers.includes(r.id)}
+                        onChange={() => toggleSelection(r.id, surveyResearchers, setSurveyResearchers)}
+                        className="text-blue-600 rounded"
+                      />
+                      <span>{r.name}</span>
+                    </label>
+                  ))}
+                  {researchers.length === 0 && <span className="text-sm text-gray-500">暂无教研员数据</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Publish Time */}
           <div>
             <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
@@ -121,8 +220,30 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
               <option value="all">全体人员 (无限制)</option>
               <option value="role">按角色筛选</option>
               <option value="school">按组织架构/学校筛选</option>
+              <option value="group">按自定义人员分组筛选</option>
               <option value="user">按具体教师人员下发</option>
             </select>
+
+            {targetType === 'group' && (
+              <div className="flex flex-wrap gap-3 p-4 bg-gray-50 rounded-md border">
+                {allGroups.length > 0 ? allGroups.map(group => (
+                  <label key={group.id} className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1 border rounded-md text-sm shadow-sm">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedGroups.includes(group.id)}
+                      onChange={() => toggleSelection(group.id, selectedGroups, setSelectedGroups)}
+                      className="text-blue-600 rounded"
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-medium">{group.name}</span>
+                      <span className="text-xs text-gray-500">{group.members?.length || 0} 人</span>
+                    </div>
+                  </label>
+                )) : (
+                  <div className="text-sm text-gray-500">暂无人员分组数据，请先在“基础信息”模块中创建</div>
+                )}
+              </div>
+            )}
 
             {targetType === 'role' && (
               <div className="flex flex-wrap gap-3 p-4 bg-gray-50 rounded-md border">
@@ -142,7 +263,7 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
 
             {targetType === 'school' && (
               <div className="flex flex-wrap gap-3 p-4 bg-gray-50 rounded-md border">
-                {SCHOOLS.map(school => (
+                {schools.map(school => (
                   <label key={school} className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1 border rounded-full text-sm">
                     <input 
                       type="checkbox" 
@@ -165,7 +286,7 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
                     onChange={(e) => setSubjectFilter(e.target.value)}
                     className="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
                   >
-                    {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                    {subjects.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-wrap gap-3 max-h-48 overflow-y-auto">

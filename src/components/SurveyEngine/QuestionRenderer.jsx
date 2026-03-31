@@ -1,5 +1,30 @@
-import React, { useState } from 'react';
-import { GripVertical, Trash2, Copy, Star, Upload as UploadIcon, ChevronUp, ChevronDown, MessageSquare, Plus } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { GripVertical, Trash2, Copy, Star, Upload as UploadIcon, ChevronUp, ChevronDown, MessageSquare, Plus, Search, FileText, ChevronDown as ChevronDownIcon, Edit3 } from 'lucide-react';
+import DataService from '../../services/dataService';
+import RichTextEditor from '../RichTextEditor';
+
+const AutoResizeTextarea = ({ value, onChange, disabled, placeholder, className, rows }) => {
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+    }
+  }, [value]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value || ''}
+      onChange={(e) => onChange && onChange(e)}
+      disabled={disabled}
+      placeholder={placeholder}
+      className={`${className} overflow-hidden resize-none`}
+      rows={rows || 1}
+    />
+  );
+};
 
 export default function QuestionRenderer({ 
   question, 
@@ -19,11 +44,23 @@ export default function QuestionRenderer({
   mode,
   responses = []
 }) {
-  const { type, label, required, allowedRoles, ...props } = question;
+  const { type, label, required, allowedRoles, allowedUsers, ...props } = question;
 
   // Determine if the current user can fill this question
-  const canFill = isEditMode || !allowedRoles || allowedRoles.length === 0 || allowedRoles.includes(userRole);
-  const isDisabled = isEditMode || !canFill || mode === 'board';
+  const noPermissionsSet = (!allowedRoles || allowedRoles.length === 0) && (!allowedUsers || allowedUsers.length === 0);
+  const hasRoleAccess = allowedRoles && allowedRoles.includes(userRole);
+  const hasUserAccess = allowedUsers && (allowedUsers.includes(currentUser?.id) || allowedUsers.includes(currentUser?.username));
+  
+  // 修复权限泄漏问题：如果指定了具体人员，则优先且仅匹配具体人员；如果没有指定人员，则按群体角色匹配
+  const canFill = isEditMode || noPermissionsSet || (allowedUsers?.length > 0 ? hasUserAccess : hasRoleAccess);
+  const isDisabled = isEditMode || !canFill || mode === 'board' || mode === 'view';
+
+  // State for blank rich text expand
+  const [expandedBlanks, setExpandedBlanks] = useState({});
+
+  const toggleBlankExpand = (idx) => {
+    setExpandedBlanks(prev => ({ ...prev, [idx]: !prev[idx] }));
+  };
 
   // Render content based on type
   const renderContent = () => {
@@ -46,129 +83,180 @@ export default function QuestionRenderer({
         );
 
       case 'lesson_record': {
-        const records = Array.isArray(value) ? value : [{ session: '第一节', grade: '', topic: '', teacher: '', advantages: '', problems: '' }];
-        
-        const handleRecordChange = (index, field, val) => {
-          if (!onChange) return;
-          const newRecords = [...records];
-          newRecords[index] = { ...newRecords[index], [field]: val };
-          onChange(newRecords);
-        };
+        const [isSelectorOpen, setIsSelectorOpen] = useState(false);
+        const [historyRecords, setHistoryRecords] = useState([]);
+        const [loadingHistory, setLoadingHistory] = useState(false);
 
-        const addRecord = () => {
-          if (!onChange) return;
-          const nextSessionMap = { '第一节': '第二节', '第二节': '第三节', '第三节': '第四节', '第四节': '第五节', '第五节': '第六节' };
-          const lastSession = records[records.length - 1]?.session || '第一节';
-          const nextSession = nextSessionMap[lastSession] || `第${records.length + 1}节`;
-          onChange([...records, { session: nextSession, grade: '', topic: '', teacher: '', advantages: '', problems: '' }]);
-        };
-
-        const removeRecord = (index) => {
-          if (!onChange) return;
-          const newRecords = records.filter((_, i) => i !== index);
-          if (newRecords.length === 0) {
-            newRecords.push({ session: '第一节', grade: '', topic: '', teacher: '', advantages: '', problems: '' });
+        const fetchHistory = async () => {
+          setLoadingHistory(true);
+          try {
+            await DataService.init();
+            const all = await DataService.getSurveys({ observer: currentUser?.name });
+            setHistoryRecords(all.filter(r => r.topic && r.teacher)); // Only keep those that look like lesson records
+          } catch (e) {
+            console.error("Failed to fetch history records", e);
+          } finally {
+            setLoadingHistory(false);
           }
-          onChange(newRecords);
         };
 
-        const subjectTitle = currentUser?.subject ? `${currentUser.subject}学科` : '学科';
+        const handleOpenSelector = () => {
+          if (isDisabled) return;
+          setIsSelectorOpen(true);
+          if (historyRecords.length === 0) {
+            fetchHistory();
+          }
+        };
+
+        const handleSelectRecord = (record) => {
+          if (!onChange) return;
+          const currentSelection = Array.isArray(value) ? value : [];
+          // Avoid duplicate selection
+          if (!currentSelection.find(r => r.id === record.id)) {
+            onChange([...currentSelection, record]);
+          }
+          setIsSelectorOpen(false);
+        };
+
+        const removeSelected = (id) => {
+          if (!onChange || isDisabled) return;
+          const currentSelection = Array.isArray(value) ? value : [];
+          onChange(currentSelection.filter(r => r.id !== id));
+        };
+
+        const selectedRecords = Array.isArray(value) ? value : [];
+        const boardRecords = mode === 'board' ? responses.flatMap(r => {
+          const ans = Array.isArray(r.answer) ? r.answer : [];
+          return ans.map(a => {
+            if (typeof a === 'string') {
+              return { id: a, topic: '历史记录', submitterName: r.userName || r.userId };
+            }
+            return { ...a, submitterName: r.userName || r.userId };
+          });
+        }) : [];
+        
+        const displayRecords = mode === 'board' ? boardRecords : selectedRecords;
+
+        if (isEditMode) {
+          return (
+            <div className="p-6 bg-blue-50 border border-blue-200 border-dashed rounded-lg text-center text-blue-600 flex flex-col items-center justify-center">
+              <FileText className="w-8 h-8 mb-2 opacity-50" />
+              <p className="font-medium">听课记录引用组件</p>
+              <p className="text-sm text-blue-500 mt-1">填报者将在此处从其个人历史记录中选择已填写的听课记录。</p>
+            </div>
+          );
+        }
 
         return (
-          <div className="space-y-6">
-            <h3 className="font-bold text-lg text-gray-800 border-b pb-2">
-              (一) {subjectTitle}
-            </h3>
-            
-            {records.map((record, idx) => (
-              <div key={idx} className="bg-gray-50 p-4 rounded-lg border border-gray-200 relative group">
-                {(!isDisabled || isEditMode) && records.length > 1 && (
-                  <button 
-                    onClick={() => removeRecord(idx)}
-                    className="absolute top-4 right-4 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="删除该节记录"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                )}
-                
-                <div className="flex flex-wrap items-center gap-3 mb-4 pr-8">
-                  <div className="font-medium text-gray-700 w-16">
-                    {idx + 1}. <input type="text" value={record.session} onChange={(e) => handleRecordChange(idx, 'session', e.target.value)} disabled={isDisabled} className="w-16 bg-transparent border-b border-gray-300 focus:border-blue-500 outline-none text-center px-1" />：
-                  </div>
+          <div className="space-y-4 relative">
+            {displayRecords.length > 0 && (
+              <div className="space-y-3">
+                {displayRecords.map((record, idx) => {
+                  const recordId = record.id || (typeof record === 'string' ? record : null);
+                  const isBoardMode = mode === 'board';
+                  const url = isBoardMode && recordId ? `${import.meta.env.BASE_URL}observations/fill/${recordId}?mode=board`.replace(/\/\//g, '/') : undefined;
                   
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="年级" 
-                      value={record.grade} 
-                      onChange={(e) => handleRecordChange(idx, 'grade', e.target.value)}
-                      disabled={isDisabled}
-                      className="w-20 border border-gray-300 rounded px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                    <span className="text-gray-600 text-sm whitespace-nowrap">课题</span>
-                    <input 
-                      type="text" 
-                      placeholder="《课题名称》" 
-                      value={record.topic} 
-                      onChange={(e) => handleRecordChange(idx, 'topic', e.target.value)}
-                      disabled={isDisabled}
-                      className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600 text-sm whitespace-nowrap">执教教师：</span>
-                    <input 
-                      type="text" 
-                      placeholder="教师姓名" 
-                      value={record.teacher} 
-                      onChange={(e) => handleRecordChange(idx, 'teacher', e.target.value)}
-                      disabled={isDisabled}
-                      className="w-24 border border-gray-300 rounded px-2 py-1 text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-                    />
-                  </div>
-                </div>
+                  const content = (
+                    <div 
+                      key={record.id || idx} 
+                      className={`bg-white border border-gray-200 p-4 rounded-lg shadow-sm flex justify-between items-start group ${isBoardMode ? 'cursor-pointer hover:border-blue-400 hover:shadow-md transition-all' : ''}`}
+                    >
+                      <div>
+                        <div className="font-medium text-gray-800 flex items-center gap-2">
+                          <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded">记录 {idx + 1}</span>
+                          {record.topic}
+                          {record.submitterName && <span className="ml-2 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">提交人: {record.submitterName}</span>}
+                        </div>
+                        <div className="text-sm text-gray-500 mt-2 flex gap-4">
+                          <span>执教：{record.teacher}</span>
+                          <span>学科：{record.subject}</span>
+                          <span>时间：{record.date}</span>
+                        </div>
+                      </div>
+                      {!isDisabled && (
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            removeSelected(record.id);
+                          }}
+                          className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                          title="移除"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                  );
 
-                <div className="space-y-3 ml-6">
-                  <div>
-                    <div className="text-gray-700 font-medium mb-1">(1) 主要优点：</div>
-                    <textarea 
-                      value={record.advantages} 
-                      onChange={(e) => handleRecordChange(idx, 'advantages', e.target.value)}
-                      disabled={isDisabled}
-                      rows={3}
-                      placeholder="请输入主要优点..."
-                      className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 resize-y"
-                    />
-                  </div>
-                  <div>
-                    <div className="text-gray-700 font-medium mb-1">(2) 存在问题：</div>
-                    <textarea 
-                      value={record.problems} 
-                      onChange={(e) => handleRecordChange(idx, 'problems', e.target.value)}
-                      disabled={isDisabled}
-                      rows={3}
-                      placeholder="请输入存在问题..."
-                      className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 resize-y"
-                    />
-                  </div>
-                </div>
+                  return isBoardMode && url ? (
+                    <a 
+                      key={recordId || idx} 
+                      href={url} 
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block outline-none"
+                    >
+                      {content}
+                    </a>
+                  ) : (
+                    <React.Fragment key={recordId || idx}>
+                      {content}
+                    </React.Fragment>
+                  );
+                })}
               </div>
-            ))}
+            )}
             
-            {(!isDisabled || isEditMode) && (
+            {(!isDisabled) && (
               <button 
                 type="button"
-                onClick={addRecord}
+                onClick={handleOpenSelector}
                 className="flex items-center justify-center w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors"
               >
-                <Plus className="w-5 h-5 mr-2" />
-                添加下一节记录
+                <Search className="w-5 h-5 mr-2" />
+                {selectedRecords.length > 0 ? '继续选择听课记录' : '点击选择听课记录'}
               </button>
+            )}
+
+            {isSelectorOpen && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto">
+                <div className="p-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center sticky top-0">
+                  <h4 className="font-medium text-gray-700">选择听课记录</h4>
+                  <button type="button" onClick={() => setIsSelectorOpen(false)} className="text-gray-400 hover:text-gray-600">
+                    关闭
+                  </button>
+                </div>
+                <div className="p-2">
+                  {loadingHistory ? (
+                    <div className="text-center py-8 text-gray-500 text-sm">加载中...</div>
+                  ) : historyRecords.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 text-sm">暂无听课记录</div>
+                  ) : (
+                    <div className="space-y-1">
+                      {historyRecords.map(record => {
+                        const isSelected = selectedRecords.find(r => r.id === record.id);
+                        return (
+                          <div 
+                            key={record.id}
+                            onClick={() => !isSelected && handleSelectRecord(record)}
+                            className={`p-3 rounded-md flex justify-between items-center cursor-pointer transition-colors ${
+                              isSelected ? 'bg-gray-50 opacity-60 cursor-not-allowed' : 'hover:bg-blue-50 border border-transparent hover:border-blue-100'
+                            }`}
+                          >
+                            <div>
+                              <div className="font-medium text-gray-800 text-sm">{record.topic || '无课题'}</div>
+                              <div className="text-xs text-gray-500 mt-1">{record.date} | {record.school} | {record.teacher}</div>
+                            </div>
+                            {isSelected && <span className="text-xs text-green-600 font-medium">已选择</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         );
@@ -263,10 +351,33 @@ export default function QuestionRenderer({
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {allRows.map((rowName, rIdx) => (
-                  <tr key={rowName} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900 border-r border-gray-200 bg-gray-50/50 break-words max-w-[150px]">
+                {allRows.map((rowName, rIdx) => {
+                  const isMyCustomRow = value?.addedRows?.includes(rowName);
+                  return (
+                  <tr key={rowName} className="hover:bg-gray-50 relative group">
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900 border-r border-gray-200 bg-gray-50/50 break-words max-w-[150px] relative">
                       {rowName}
+                      {!isDisabled && isMyCustomRow && (
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            if (!onChange) return;
+                            const currentAdded = value.addedRows.filter(r => r !== rowName);
+                            const newCells = { ...value.cells };
+                            // Remove cells associated with this row
+                            Object.keys(newCells).forEach(key => {
+                              if (key.startsWith(`${rowName}_`)) {
+                                delete newCells[key];
+                              }
+                            });
+                            onChange({ ...value, addedRows: currentAdded, cells: newCells });
+                          }}
+                          className="absolute right-1 top-1/2 -translate-y-1/2 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                          title="删除该行"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                     {(props.cols || []).map((col, cIdx) => {
                       const cellKey = `${rowName}_${cIdx}`;
@@ -344,13 +455,13 @@ export default function QuestionRenderer({
                             />
                           )}
                           {props.mode === 'input' && (
-                            <textarea 
+                            <AutoResizeTextarea 
                               disabled={cellDisabled}
                               value={displayVal}
                               onChange={(e) => handleCellChange(e.target.value)}
                               placeholder={isOccupiedByOther ? `[${occupied.userName}] 已填` : ''}
                               rows={2}
-                              className={`w-full min-w-[120px] border-gray-300 rounded shadow-sm text-sm p-2 focus:ring-blue-500 focus:border-blue-500 resize-y ${isOccupiedByOther ? 'bg-gray-100 text-gray-600 cursor-not-allowed border-transparent' : 'bg-white'}`} 
+                              className={`w-full min-w-[120px] border-gray-300 rounded shadow-sm text-sm p-2 focus:ring-blue-500 focus:border-blue-500 ${isOccupiedByOther ? 'bg-gray-100 text-gray-600 cursor-not-allowed border-transparent' : 'bg-white'}`} 
                               title={isOccupiedByOther ? `由 ${occupied.userName} 填写` : ''}
                             />
                           )}
@@ -358,27 +469,45 @@ export default function QuestionRenderer({
                       );
                     })}
                   </tr>
-                ))}
+                );
+                })}
               </tbody>
             </table>
             
-            {!isDisabled && canFill && (
+            {!isDisabled && canFill && (!value?.addedRows || value.addedRows.length < 1) && (
               <div className="mt-3 flex justify-start">
                 <button 
                   type="button"
                   onClick={() => {
-                    let baseName = currentUser?.subject || currentUser?.name || "新行";
-                    let defaultName = baseName;
-                    let counter = 1;
-                    while(allRows.includes(defaultName)) {
-                       defaultName = `${baseName} ${counter}`;
-                       counter++;
+                    let baseName = "新行";
+                    if (props.topLeftLabel) {
+                      if (props.topLeftLabel.includes('学科') || props.topLeftLabel.includes('科目')) {
+                        baseName = currentUser?.subject || currentUser?.name || "新行";
+                      } else if (props.topLeftLabel.includes('序号')) {
+                        baseName = (allRows.length + 1).toString();
+                      }
+                    }
+                    let rowName = baseName;
+                    
+                    // Automatically use the baseName without prompt if not in edit mode
+                    if (isEditMode) {
+                      let defaultName = baseName;
+                      let counter = 1;
+                      while(allRows.includes(defaultName)) {
+                         defaultName = `${baseName} ${counter}`;
+                         counter++;
+                      }
+                      rowName = prompt("请输入新行名称:", defaultName);
+                    } else {
+                      let counter = 1;
+                      while(allRows.includes(rowName)) {
+                         rowName = `${baseName} ${counter}`;
+                         counter++;
+                      }
                     }
                     
-                    const rowName = prompt("请输入新行名称:", defaultName);
-                    
                     if (rowName) {
-                      if (allRows.includes(rowName)) {
+                      if (isEditMode && allRows.includes(rowName)) {
                         alert("行名称已存在或无效！");
                         return;
                       }
@@ -474,11 +603,6 @@ export default function QuestionRenderer({
           onChange(newValues);
         };
 
-        const addBlankRow = () => {
-          if (!onChange) return;
-          onChange([...blankValues, '']);
-        };
-
         const removeBlankRow = (index) => {
           if (!onChange) return;
           const newValues = blankValues.filter((_, i) => i !== index);
@@ -489,32 +613,44 @@ export default function QuestionRenderer({
           return (
             <div className="w-full space-y-2">
               {blankValues.map((val, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <input 
-                    type="text" 
-                    placeholder={props.placeholder || '请输入...'} 
-                    disabled={isDisabled}
-                    value={val}
-                    onChange={(e) => handleBlankChange(idx, e.target.value)}
-                    className={`border border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm flex-1 ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''}`} 
-                  />
-                  {!isDisabled && blankValues.length > 1 && (
-                    <button onClick={() => removeBlankRow(idx)} className="text-red-400 hover:text-red-600 p-1">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                <div key={idx} className="flex flex-col gap-2 relative">
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="text" 
+                      placeholder={props.placeholder || '请输入...'} 
+                      disabled={isDisabled}
+                      value={val}
+                      onChange={(e) => handleBlankChange(idx, e.target.value)}
+                      className={`border border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm flex-1 ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''}`} 
+                    />
+                    {!isDisabled && (
+                      <button 
+                        type="button" 
+                        onClick={() => toggleBlankExpand(idx)} 
+                        className={`p-2 rounded text-gray-500 hover:bg-gray-100 ${expandedBlanks[idx] ? 'bg-gray-100' : ''}`}
+                        title="高级编辑"
+                      >
+                        <ChevronDownIcon className={`w-4 h-4 transition-transform ${expandedBlanks[idx] ? 'rotate-180' : ''}`} />
+                      </button>
+                    )}
+                    {!isDisabled && blankValues.length > 1 && (
+                      <button type="button" onClick={() => removeBlankRow(idx)} className="text-red-400 hover:text-red-600 p-1">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  {expandedBlanks[idx] && !isDisabled && (
+                    <div className="w-full animate-in fade-in slide-in-from-top-2">
+                      <RichTextEditor 
+                        value={val} 
+                        onChange={(newVal) => handleBlankChange(idx, newVal)} 
+                        disabled={isDisabled} 
+                        placeholder={props.placeholder || '请输入详细内容...'}
+                      />
+                    </div>
                   )}
                 </div>
               ))}
-              {!isDisabled && (
-                <button 
-                  type="button"
-                  onClick={addBlankRow}
-                  className="text-blue-600 text-sm flex items-center hover:text-blue-800 font-medium px-2 py-1 bg-blue-50 rounded hover:bg-blue-100 transition-colors inline-flex mt-2"
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  添加行
-                </button>
-              )}
             </div>
           );
         }
@@ -529,56 +665,90 @@ export default function QuestionRenderer({
             {/* Show other people's occupied slots */}
             {hasOthers && otherResponses.map((r, i) => {
               const otherVals = Array.isArray(r.answer) ? r.answer : [r.answer];
-              return otherVals.map((val, vIdx) => (
-                <div key={`other-${i}-${vIdx}`} className="flex items-center gap-2">
-                  <div className="flex items-center w-24 shrink-0 text-sm text-gray-500">
-                    <span className="truncate" title={r.userName}>{r.userName}{otherVals.length > 1 ? ` (${vIdx + 1})` : ''}</span>
+              return otherVals.map((val, vIdx) => {
+                const expandKey = `other_${i}_${vIdx}`;
+                return (
+                <div key={`other-${i}-${vIdx}`} className="flex flex-col gap-2 relative">
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center w-24 shrink-0 text-sm text-gray-500">
+                      <span className="truncate" title={r.userName}>{r.userName}{otherVals.length > 1 ? ` (${vIdx + 1})` : ''}</span>
+                    </div>
+                    <input 
+                      type="text" 
+                      disabled 
+                      value={val ? String(val).replace(/<[^>]*>?/gm, '') : ''}
+                      className={`border border-gray-200 rounded-md bg-gray-50 px-3 py-2 cursor-not-allowed text-gray-600 sm:text-sm flex-1`} 
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => toggleBlankExpand(expandKey)} 
+                      className={`p-2 rounded text-gray-500 hover:bg-gray-100 ${expandedBlanks[expandKey] ? 'bg-gray-100' : ''}`}
+                      title="查看详细内容"
+                    >
+                      <ChevronDownIcon className={`w-4 h-4 transition-transform ${expandedBlanks[expandKey] ? 'rotate-180' : ''}`} />
+                    </button>
                   </div>
-                  <input 
-                    type="text" 
-                    disabled 
-                    value={String(val || '')}
-                    className={`border border-gray-200 rounded-md bg-gray-50 px-3 py-2 cursor-not-allowed text-gray-600 sm:text-sm flex-1`} 
-                  />
+                  {expandedBlanks[expandKey] && (
+                    <div className="w-full pl-26 ml-2 animate-in fade-in slide-in-from-top-2">
+                      <RichTextEditor 
+                        value={val} 
+                        onChange={() => {}}
+                        disabled={true} 
+                        placeholder="无内容"
+                      />
+                    </div>
+                  )}
                 </div>
-              ));
+              )});
             })}
 
             {/* Current user's slot */}
             {showMySlot && (
               <div className="w-full space-y-2">
-                {blankValues.map((val, idx) => (
-                  <div key={`my-${idx}`} className="flex items-center gap-2">
-                    <div className="flex items-center w-24 shrink-0 text-sm font-medium text-blue-600">
-                      <span className="truncate" title={userRole}>{currentUserId || '我'}{blankValues.length > 1 ? ` (${idx + 1})` : ''}</span>
+                {blankValues.map((val, idx) => {
+                  const expandKey = `my_${idx}`;
+                  return (
+                  <div key={expandKey} className="flex flex-col gap-2 relative">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center w-24 shrink-0 text-sm font-medium text-blue-600">
+                        <span className="truncate" title={userRole}>{currentUserId || '我'}{blankValues.length > 1 ? ` (${idx + 1})` : ''}</span>
+                      </div>
+                      <input 
+                        type="text" 
+                        placeholder={props.placeholder || '请输入...'} 
+                        disabled={isDisabled}
+                        value={val ? val.replace(/<[^>]*>?/gm, '') : ''}
+                        onChange={(e) => handleBlankChange(idx, e.target.value)}
+                        className={`border border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm flex-1 ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`} 
+                      />
+                      {(!isDisabled || mode === 'board') && (
+                        <button 
+                          type="button" 
+                          onClick={() => toggleBlankExpand(expandKey)} 
+                          className={`p-2 rounded text-gray-500 hover:bg-gray-100 ${expandedBlanks[expandKey] ? 'bg-gray-100' : ''}`}
+                          title={isDisabled ? "查看详细内容" : "高级编辑"}
+                        >
+                          <ChevronDownIcon className={`w-4 h-4 transition-transform ${expandedBlanks[expandKey] ? 'rotate-180' : ''}`} />
+                        </button>
+                      )}
+                      {!isDisabled && blankValues.length > 1 && (
+                        <button type="button" onClick={() => removeBlankRow(idx)} className="text-red-400 hover:text-red-600 p-1">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
-                    <input 
-                      type="text" 
-                      placeholder={props.placeholder || '请输入...'} 
-                      disabled={isDisabled}
-                      value={val}
-                      onChange={(e) => handleBlankChange(idx, e.target.value)}
-                      className={`border border-gray-300 rounded-md shadow-sm px-3 py-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm flex-1 ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`} 
-                    />
-                    {!isDisabled && blankValues.length > 1 && (
-                      <button onClick={() => removeBlankRow(idx)} className="text-red-400 hover:text-red-600 p-1">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    {expandedBlanks[expandKey] && (
+                      <div className="w-full pl-26 ml-2 animate-in fade-in slide-in-from-top-2">
+                        <RichTextEditor 
+                          value={val} 
+                          onChange={(newVal) => handleBlankChange(idx, newVal)} 
+                          disabled={isDisabled} 
+                          placeholder={props.placeholder || '请输入详细内容...'}
+                        />
+                      </div>
                     )}
                   </div>
-                ))}
-                {!isDisabled && canFill && (
-                  <div className="ml-26 pl-2">
-                    <button 
-                      type="button"
-                      onClick={addBlankRow}
-                      className="text-blue-600 text-sm flex items-center hover:text-blue-800 font-medium px-2 py-1 bg-blue-50 rounded hover:bg-blue-100 transition-colors inline-flex"
-                    >
-                      <Plus className="w-4 h-4 mr-1" />
-                      添加行
-                    </button>
-                  </div>
-                )}
+                )})}
               </div>
             )}
           </div>
@@ -587,7 +757,7 @@ export default function QuestionRenderer({
       case 'textarea':
         if (isEditMode || mode === 'edit' || (!mode && !isEditMode)) {
           return (
-            <textarea 
+            <AutoResizeTextarea 
               placeholder={props.placeholder || '请输入详细内容...'} 
               disabled={isDisabled}
               value={value || ''}
@@ -610,7 +780,7 @@ export default function QuestionRenderer({
                 <div className="text-sm text-gray-500 font-medium">
                   {r.userName}
                 </div>
-                <textarea 
+                <AutoResizeTextarea 
                   disabled
                   value={String(r.answer || '')}
                   className="w-full border border-gray-200 rounded-md bg-gray-50 px-3 py-2 cursor-not-allowed text-gray-600 sm:text-sm" 
@@ -624,7 +794,7 @@ export default function QuestionRenderer({
                 <div className="text-sm font-medium text-blue-600">
                   {currentUserId || '我'}
                 </div>
-                <textarea 
+                <AutoResizeTextarea 
                   placeholder={props.placeholder || '请输入详细内容...'} 
                   disabled={isDisabled}
                   value={value || ''}
@@ -662,8 +832,8 @@ export default function QuestionRenderer({
       {/* Edit Mode Hover/Selected Overlay */}
       {isEditMode && isSelected && (
         <div className="absolute -left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-10">
-          <button onClick={(e) => { e.stopPropagation(); onMoveUp(); }} className="p-1 bg-white border rounded shadow hover:bg-gray-50 text-gray-500"><ChevronUp className="w-4 h-4"/></button>
-          <button onClick={(e) => { e.stopPropagation(); onMoveDown(); }} className="p-1 bg-white border rounded shadow hover:bg-gray-50 text-gray-500"><ChevronDown className="w-4 h-4"/></button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); onMoveUp(); }} className="p-1 bg-white border rounded shadow hover:bg-gray-50 text-gray-500"><ChevronUp className="w-4 h-4"/></button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); onMoveDown(); }} className="p-1 bg-white border rounded shadow hover:bg-gray-50 text-gray-500"><ChevronDown className="w-4 h-4"/></button>
         </div>
       )}
 
@@ -689,8 +859,8 @@ export default function QuestionRenderer({
         </div>
       )}
 
-      {/* Board mode: show all responses for non-blank/textarea/matrix types */}
-      {mode === 'board' && !['title', 'text', 'pagination', 'blank', 'textarea', 'matrix'].includes(type) && (
+      {/* Board mode: show all responses for non-blank/textarea/matrix/lesson_record types */}
+      {mode === 'board' && !['title', 'text', 'pagination', 'blank', 'textarea', 'matrix', 'lesson_record'].includes(type) && (
         <div className="mt-6 pl-6">
           <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm">
             <div className="text-blue-800 mb-3 font-semibold flex items-center">
@@ -724,6 +894,7 @@ export default function QuestionRenderer({
       {isEditMode && isSelected && (
         <div className="absolute right-4 top-4 flex gap-2">
           <button 
+            type="button"
             onClick={(e) => { e.stopPropagation(); onCopy(question); }}
             className="p-2 text-blue-500 hover:bg-blue-50 rounded"
             title="复制"
@@ -731,6 +902,7 @@ export default function QuestionRenderer({
             <Copy className="w-4 h-4" />
           </button>
           <button 
+            type="button"
             onClick={(e) => { e.stopPropagation(); onDelete(question.id); }}
             className="p-2 text-red-500 hover:bg-red-50 rounded"
             title="删除"

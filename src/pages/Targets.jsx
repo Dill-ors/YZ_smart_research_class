@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Target, Save, CheckCircle, AlertCircle, User, Award } from 'lucide-react';
+import { Target, Save, CheckCircle, AlertCircle, User, Award, Trash2 } from 'lucide-react';
 import DataService from '../services/dataService';
 import { useAuth } from '../context/AuthContext';
 
@@ -11,6 +11,8 @@ const Targets = () => {
   const [targetValue, setTargetValue] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [surveys, setSurveys] = useState([]);
+
   useEffect(() => {
     DataService.init().then(() => {
       loadData();
@@ -21,21 +23,24 @@ const Targets = () => {
     setLoading(true);
     const allTargets = await DataService.getTargets();
     setTargets(allTargets);
+    
+    const allSurveys = await DataService.getSurveys();
+    setSurveys(allSurveys);
 
     // Determine which users the current user can manage
     let users = [];
     if (user?.role === 'district_director' || user?.role === 'admin') {
-      // Director manages Researchers
+      // Director and Admin manage Researchers
       const researchers = await DataService.getUsersByRole('district_researcher');
       users = [...users, ...researchers];
     } 
     
-    if (user?.role === 'principal' || user?.role === 'admin') {
-      // Principal manages Teachers (and other school users)
+    if (user?.role === 'principal' || user?.role === 'admin' || user?.role === 'district_director') {
+      // Principal manages Teachers (and other school users), Admin and Director manage all teachers
       const teachers = await DataService.getUsersByRole('teacher');
       // Filter teachers by school if principal
       if (user?.role === 'principal') {
-          users = [...users, ...teachers.filter(t => t.school === '市北四实验')]; // Mock user school for now
+          users = [...users, ...teachers.filter(t => t.school === user.school)];
       } else {
           users = [...users, ...teachers];
       }
@@ -71,11 +76,26 @@ const Targets = () => {
     loadData(); // Reload to show updated list
   };
 
-  // Helper to get progress (Mocked for now as we don't have easy count per user without filtering surveys)
+  const handleDeleteTarget = async (id) => {
+    if (window.confirm('确定要删除该监控目标吗？删除后不可恢复。')) {
+      try {
+        await DataService.deleteTarget(id);
+        loadData(); // Reload list
+      } catch (error) {
+        console.error('Failed to delete target:', error);
+        alert('删除目标失败，请重试');
+      }
+    }
+  };
+
+  // Helper to get progress
   const getProgress = (target) => {
-      // In a real app, query survey count for this user
-      // Mocking random progress for demo
-      return Math.floor(Math.random() * target.targetValue);
+      // Calculate actual survey count for this user
+      const userSurveys = surveys.filter(s => {
+          // If the survey has an observer or researcherName matching the target user
+          return s.observer === target.userName || s.researcherName === target.userName;
+      });
+      return userSurveys.length;
   };
 
   return (
@@ -165,6 +185,9 @@ const Targets = () => {
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 状态
                             </th>
+                            <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                操作
+                            </th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -211,12 +234,21 @@ const Targets = () => {
                                             </span>
                                         )}
                                     </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button 
+                                            onClick={() => handleDeleteTarget(target.id)}
+                                            className="text-red-600 hover:text-red-900 flex items-center justify-end w-full"
+                                            title="删除监控人员"
+                                        >
+                                            <Trash2 className="w-4 h-4 mr-1" /> 删除
+                                        </button>
+                                    </td>
                                 </tr>
                             );
                         })}
                         {targets.filter(t => managedUsers.some(u => u.username === t.userId)).length === 0 && (
                             <tr>
-                                <td colSpan="4" className="px-6 py-10 text-center text-gray-500">
+                                <td colSpan="5" className="px-6 py-10 text-center text-gray-500">
                                     暂无目标数据，请先设定目标
                                 </td>
                             </tr>
