@@ -9,7 +9,6 @@ const Targets = () => {
   const [managedUsers, setManagedUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState('');
   const [targetValue, setTargetValue] = useState('');
-  const [loading, setLoading] = useState(false);
 
   const [surveys, setSurveys] = useState([]);
 
@@ -20,7 +19,6 @@ const Targets = () => {
   }, [user]);
 
   const loadData = async () => {
-    setLoading(true);
     const allTargets = await DataService.getTargets();
     setTargets(allTargets);
     
@@ -47,7 +45,6 @@ const Targets = () => {
     }
 
     setManagedUsers(users);
-    setLoading(false);
   };
 
   const handleSetTarget = async (e) => {

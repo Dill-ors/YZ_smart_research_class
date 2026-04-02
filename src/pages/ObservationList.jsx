@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Search, Eye, FileText, Edit, Trash2, Filter, User, BookOpen, Calendar, ChevronLeft, ChevronRight, Download, MapPin } from 'lucide-react';
+import { Plus, Search, Eye, FileText, Edit, Trash2, Filter, User, BookOpen, Calendar, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import DataService from '../services/dataService';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from '../utils/rbac';
@@ -24,13 +24,15 @@ const ObservationList = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    DataService.init().then(() => {
+    DataService.init().then(async () => {
       loadData();
       if (DataService.getSchools) {
-        setSchools(DataService.getSchools().map(s => s.name));
+        const schoolsData = await DataService.getSchools();
+        setSchools(schoolsData.map(s => s.name));
       }
       if (DataService.getSubjects) {
-        setSubjects(DataService.getSubjects().map(s => s.name));
+        const subjectsData = await DataService.getSubjects();
+        setSubjects(subjectsData.map(s => s.name));
       }
     });
   }, [filters, user]);

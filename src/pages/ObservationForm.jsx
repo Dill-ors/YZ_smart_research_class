@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useId } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, Save, Plus, Trash2, Upload, X, Download } from 'lucide-react';
+import { Save, Plus, Trash2, Upload, Download } from 'lucide-react';
 import DataService from '../services/dataService';
 import { uploadToOSS } from '../services/ossService';
 import SurveyEngine from '../components/SurveyEngine';
@@ -84,7 +84,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
     problems_suggestions: '',
     school_suggestions: '',
     overall_evaluation: '',
-    recordMode: 'standard', // 'standard' | 'photo' | 'custom' | 'simple'
+    recordMode: 'simple', // 'standard' | 'photo' | 'custom' | 'simple'
     images: [], // array of image urls
     customSurveyData: null // for custom mode
   });
@@ -108,29 +108,37 @@ const ObservationForm = ({ mode = 'edit' }) => {
 
   const [availableGrades, setAvailableGrades] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
-  const [availableTeachers, setAvailableTeachers] = useState([]);
-  const [recordMode, setRecordMode] = useState('standard');
+  
+  const [recordMode, setRecordMode] = useState('simple');
   const [schools, setSchools] = useState([]);
 
   useEffect(() => {
-    if (DataService.getSchools) {
-      setSchools(DataService.getSchools().map(s => s.name));
-    }
+    const loadSchools = async () => {
+      if (DataService.getSchools) {
+        const schoolsData = await DataService.getSchools();
+        setSchools(schoolsData.map(s => s.name));
+      }
+    };
+    loadSchools();
   }, []);
 
   // Set available subjects and grades based on selected school
   useEffect(() => {
-    if (formData.school) {
-      setAvailableGrades(['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三']);
-      if (DataService.getSubjects) {
-        setAvailableSubjects(DataService.getSubjects().map(s => s.name));
+    const loadSubjects = async () => {
+      if (formData.school) {
+        setAvailableGrades(['一年级', '二年级', '三年级', '四年级', '五年级', '六年级', '初一', '初二', '初三', '高一', '高二', '高三']);
+        if (DataService.getSubjects) {
+          const subjectsData = await DataService.getSubjects();
+          setAvailableSubjects(subjectsData.map(s => s.name));
+        } else {
+          setAvailableSubjects([]);
+        }
       } else {
+        setAvailableGrades([]);
         setAvailableSubjects([]);
       }
-    } else {
-      setAvailableGrades([]);
-      setAvailableSubjects([]);
-    }
+    };
+    loadSubjects();
   }, [formData.school]);
 
   // Handle Cascading Resets
@@ -259,8 +267,6 @@ const ObservationForm = ({ mode = 'edit' }) => {
     navigate('/observations');
   };
 
-  const isJuniorHigh = formData.grade && formData.grade.includes('初');
-
   return (
     <div className="max-w-4xl mx-auto bg-white shadow sm:rounded-lg">
       <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
@@ -278,22 +284,12 @@ const ObservationForm = ({ mode = 'edit' }) => {
               <button
                 type="button"
                 onClick={() => {
-                  setRecordMode('standard');
-                  setFormData(prev => ({ ...prev, recordMode: 'standard' }));
-                }}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${recordMode === 'standard' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                标准模式
-              </button>
-              <button
-                type="button"
-                onClick={() => {
                   setRecordMode('simple');
                   setFormData(prev => ({ ...prev, recordMode: 'simple' }));
                 }}
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${recordMode === 'simple' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
               >
-                简洁模式
+                集中调研模式
               </button>
               <button
                 type="button"
@@ -304,6 +300,16 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${recordMode === 'photo' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
               >
                 快捷上传模式
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecordMode('standard');
+                  setFormData(prev => ({ ...prev, recordMode: 'standard' }));
+                }}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${recordMode === 'standard' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                标准模式
               </button>
               <button
                 type="button"

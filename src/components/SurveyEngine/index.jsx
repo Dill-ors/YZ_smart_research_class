@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Eye, ArrowLeft, Download, BarChart2, MessageSquare, RefreshCw } from 'lucide-react';
+import { Save, Eye, ArrowLeft, Download, BarChart2, RefreshCw } from 'lucide-react';
 import { QUESTION_TYPES } from './QuestionTypes';
 import QuestionRenderer from './QuestionRenderer';
 import PropertyPanel from './PropertyPanel';
 import { useAuth } from '../../context/AuthContext';
+import { hasPermission } from '../../utils/rbac';
 import DataService from '../../services/dataService';
+import { exportReport } from '../../utils/exportReport';
 
 export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, onRefresh, mode = 'edit', responses = [] }) {
   const { user } = useAuth();
@@ -35,7 +37,7 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
 
   // Global settings
   const [title, setTitle] = useState(initialData?.title || '未命名调研问卷');
-  const [description, setDescription] = useState(initialData?.description || '');
+  const [description] = useState(initialData?.description || '');
 
   // Add a new question
   const handleAddQuestion = (qType) => {
@@ -99,7 +101,7 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
 
   useEffect(() => {
     if (activeTab === 'analysis') {
-      DataService.getAllUsers().then(users => {
+      DataService.getAllUsers().then(async users => {
         const target = initialData?.publishConfig?.target;
         if (!target || target.type === 'all') {
           setTargetUsers(users);
@@ -112,7 +114,7 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
         } else if (target.type === 'user') {
           setTargetUsers(users.filter(u => target.userIds?.includes(u.id)));
         } else if (target.type === 'group') {
-          const groups = DataService.getUserGroups ? DataService.getUserGroups() : [];
+          const groups = DataService.getUserGroups ? await DataService.getUserGroups() : [];
           const selectedG = groups.filter(g => target.groupIds?.includes(g.id));
           const userIdsInGroups = new Set();
           selectedG.forEach(g => (g.members || []).forEach(id => userIdsInGroups.add(id)));
@@ -137,22 +139,35 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
 
   const [previewPageIdx, setPreviewPageIdx] = useState(0);
 
+  const handleExport = async () => {
+    try {
+      await exportReport(
+        { title, description, pages },
+        latestResponses,
+        targetUsers || [],
+        'word'
+      );
+    } catch (err) {
+      alert('导出失败：' + err.message);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-100 overflow-hidden">
       {/* Top Header */}
       <div className="h-16 bg-white border-b flex items-center justify-between px-6 shrink-0 z-10 shadow-sm">
-        <div className="flex items-center gap-4">
-          <button onClick={onCancel} className="text-gray-500 hover:text-gray-700">
+        <div className="flex items-center gap-4 flex-1 min-w-0 mr-4">
+          <button onClick={onCancel} className="text-gray-500 hover:text-gray-700 shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
           {mode === 'fill' || mode === 'board' ? (
-            <span className="text-lg font-bold w-64 truncate">{title}</span>
+            <span className="text-lg font-bold truncate flex-1" title={title}>{title}</span>
           ) : (
             <input 
               type="text" 
               value={title} 
               onChange={(e) => setTitle(e.target.value)}
-              className="text-lg font-bold border-none focus:ring-0 p-0 w-64 bg-transparent"
+              className="text-lg font-bold border-none focus:ring-0 p-0 flex-1 min-w-0 bg-transparent"
               placeholder="点击编辑问卷标题"
             />
           )}
@@ -174,12 +189,14 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
               >
                 <Eye className="w-4 h-4" /> 问卷原卷
               </button>
-              <button 
-                onClick={() => setActiveTab('analysis')}
-                className={`px-4 py-1.5 text-sm font-medium rounded-md flex items-center gap-1 ${activeTab === 'analysis' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
-              >
-                <BarChart2 className="w-4 h-4" /> 填报统计
-              </button>
+              {hasPermission(user, 'canModifyStructure') && (
+                <button 
+                  onClick={() => setActiveTab('analysis')}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md flex items-center gap-1 ${activeTab === 'analysis' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                  <BarChart2 className="w-4 h-4" /> 填报统计
+                </button>
+              )}
             </div>
           )}
           <button 
@@ -278,7 +295,7 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
 
               {/* Questions Page */}
               <div className="p-8">
-                {pages[previewPageIdx]?.map((q, i) => (
+                {pages[previewPageIdx]?.map((q) => (
                   <QuestionRenderer
                     key={q.id}
                     question={q}
@@ -311,21 +328,25 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
           </div>
         )}
 
-        {activeTab === 'analysis' && (
+        {activeTab === 'analysis' && hasPermission(user, 'canModifyStructure') && (
           <div className="flex-1 bg-gray-50 p-8 overflow-y-auto">
             <div className="max-w-5xl mx-auto space-y-8">
               {/* Header Stats */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                 <div className="flex justify-between items-center mb-6 border-b pb-4">
                   <h2 className="text-xl font-bold text-gray-800">数据分析与完成情况报告</h2>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 relative">
                     {onRefresh && (
                       <button onClick={onRefresh} className="flex items-center gap-2 px-4 py-2 border border-blue-300 text-blue-600 rounded-md hover:bg-blue-50 text-sm font-medium transition-colors">
                         <RefreshCw className="w-4 h-4" /> 刷新数据
                       </button>
                     )}
-                    <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium">
-                      <Download className="w-4 h-4" /> 导出报告
+                    <button 
+                      type="button"
+                      onClick={handleExport}
+                      className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium"
+                    >
+                      <Download className="w-4 h-4" /> 导出 Word
                     </button>
                   </div>
                 </div>

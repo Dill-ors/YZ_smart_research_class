@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  FileText, Plus, BarChart2, CheckCircle, Clock, 
-  Settings, Trash2, Edit3, XCircle, RotateCcw, Activity,
+  FileText, Plus, BarChart2, CheckCircle, Trash2, Edit3, XCircle, RotateCcw, Activity,
   Download, Upload
 } from 'lucide-react';
 import SurveyEngine from '../components/SurveyEngine';
@@ -96,12 +95,13 @@ export default function Reports() {
       setReports(fetchedReports);
       const fetchedResponses = await DataService.getResponses();
       setAllResponses(fetchedResponses);
+      if (DataService.getSchools) {
+        const schoolsData = await DataService.getSchools();
+        setSchools(schoolsData.map(s => s.name));
+      }
       setLoading(false);
     };
     loadData();
-    if (DataService.getSchools) {
-      setSchools(DataService.getSchools().map(s => s.name));
-    }
   }, [user]);
 
   // Refetch responses when entering board mode to ensure latest data
@@ -210,7 +210,19 @@ export default function Reports() {
     setSurveyToPublish(null);
   };
 
-  const renderStatus = (status) => {
+  const renderStatus = (report) => {
+    // 教师/教研员等非管理员角色，显示基于提交状态的“已完成”/“未完成”
+    if (!hasPermission(user, 'canModifyStructure') && report.status === 'published') {
+      const hasSubmitted = allResponses.some(r => r.surveyId === report.id && r.userId === user?.username);
+      if (hasSubmitted) {
+        return <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">已完成</span>;
+      } else {
+        return <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">未完成</span>;
+      }
+    }
+
+    // 管理员/主任保持原有状态显示
+    const status = report.status;
     const map = {
       'published': { text: '已发布', color: 'bg-green-100 text-green-800' },
       'draft': { text: '草稿', color: 'bg-yellow-100 text-yellow-800' },
@@ -408,7 +420,7 @@ export default function Reports() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{report.category}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{report.publishConfig?.surveySchool || '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">{renderStatus(report.status)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">{renderStatus(report)}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {(() => {
                       const surveyResponses = allResponses.filter(r => r.surveyId === report.id);
@@ -443,9 +455,15 @@ export default function Reports() {
                         </>
                       )}
                       {(report.status === 'published' || report.status === 'closed') && (
-                        <button onClick={() => { setCurrentSurvey(report); setActiveTab('board'); }} className="text-purple-600 hover:text-purple-900" title="数据看板">
-                          <BarChart2 className="w-4 h-4" />
-                        </button>
+                        hasPermission(user, 'canModifyStructure') ? (
+                          <button onClick={() => { setCurrentSurvey(report); setActiveTab('board'); }} className="text-purple-600 hover:text-purple-900" title="数据看板">
+                            <BarChart2 className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button onClick={() => { setCurrentSurvey(report); setActiveTab('board'); }} className="text-blue-600 hover:text-blue-900 font-medium text-xs flex items-center border border-blue-200 bg-blue-50 px-2 py-1 rounded" title="查看问卷">
+                            查看问卷
+                          </button>
+                        )
                       )}
                       {report.status === 'published' && (
                         <button onClick={() => { setCurrentSurvey(report); setActiveTab('fill'); }} className="text-green-600 hover:text-green-900 font-medium text-xs flex items-center border border-green-200 bg-green-50 px-2 py-1 rounded" title="填写问卷">

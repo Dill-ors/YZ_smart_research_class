@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { BookOpen, User, Lock, ChevronDown } from 'lucide-react';
+import { BookOpen, User, Lock } from 'lucide-react';
 import DataService from '../services/dataService';
 
 const Login = () => {

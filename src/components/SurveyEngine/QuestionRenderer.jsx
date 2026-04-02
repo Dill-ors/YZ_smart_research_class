@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GripVertical, Trash2, Copy, Star, Upload as UploadIcon, ChevronUp, ChevronDown, MessageSquare, Plus, Search, FileText, ChevronDown as ChevronDownIcon, Edit3 } from 'lucide-react';
+import { GripVertical, Trash2, Copy, Star, Upload as UploadIcon, ChevronUp, ChevronDown, Search, FileText, ChevronDown as ChevronDownIcon } from 'lucide-react';
 import DataService from '../../services/dataService';
 import RichTextEditor from '../RichTextEditor';
 
@@ -28,7 +28,6 @@ const AutoResizeTextarea = ({ value, onChange, disabled, placeholder, className,
 
 export default function QuestionRenderer({ 
   question, 
-  index, 
   isEditMode, 
   isSelected, 
   onSelect, 
@@ -340,6 +339,7 @@ export default function QuestionRenderer({
         return (
           <div className="overflow-x-auto w-full">
             <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md shadow-sm">
+
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 w-32">{props.topLeftLabel || ''}</th>
@@ -351,7 +351,7 @@ export default function QuestionRenderer({
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {allRows.map((rowName, rIdx) => {
+                {allRows.map((rowName) => {
                   const isMyCustomRow = value?.addedRows?.includes(rowName);
                   return (
                   <tr key={rowName} className="hover:bg-gray-50 relative group">
@@ -550,37 +550,101 @@ export default function QuestionRenderer({
         return (
           <div className="flex items-center gap-2">
             {props.shape === 'star' && (
-              <div className="flex text-gray-300">
+              <div className="flex">
                 {Array.from({ length: props.maxStar || 5 }).map((_, i) => (
-                  <Star key={i} className="w-8 h-8 cursor-pointer hover:text-yellow-400" />
+                  <Star 
+                    key={i} 
+                    className={`w-8 h-8 ${!isDisabled ? 'cursor-pointer' : ''} ${value > i ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} 
+                    onClick={() => {
+                      if (!isDisabled && onChange) onChange(i + 1);
+                    }}
+                  />
                 ))}
               </div>
             )}
             {props.shape === 'number' && (
               <div className="flex gap-2">
                 {Array.from({ length: props.maxStar || 5 }).map((_, i) => (
-                  <div key={i} className="w-10 h-10 flex items-center justify-center border border-gray-300 rounded cursor-pointer hover:bg-blue-50 hover:border-blue-300 text-gray-600">
+                  <div 
+                    key={i} 
+                    className={`w-10 h-10 flex items-center justify-center border rounded ${!isDisabled ? 'cursor-pointer hover:bg-blue-50 hover:border-blue-300' : ''} ${value === i + 1 ? 'bg-blue-500 text-white border-blue-500' : 'border-gray-300 text-gray-600'}`}
+                    onClick={() => {
+                      if (!isDisabled && onChange) onChange(i + 1);
+                    }}
+                  >
                     {i + 1}
                   </div>
                 ))}
               </div>
             )}
             {props.shape === 'slider' && (
-              <input type="range" min="1" max={props.maxStar || 100} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" disabled={isDisabled} />
+              <div className="w-full flex items-center gap-4">
+                <input 
+                  type="range" 
+                  min="1" 
+                  max={props.maxStar || 100} 
+                  value={value || 1}
+                  onChange={(e) => {
+                    if (!isDisabled && onChange) onChange(parseInt(e.target.value, 10));
+                  }}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" 
+                  disabled={isDisabled} 
+                />
+                <span className="text-gray-600 font-medium w-8 text-right">{value || 1}</span>
+              </div>
             )}
           </div>
         );
 
       case 'sort':
+        // For sort questions, the user needs to reorder options.
+        // In view mode or board mode, display the sorted list.
+        const sortValues = Array.isArray(value) && value.length > 0 ? value : (props.options || []);
+        
+        const moveSortItem = (index, direction) => {
+          if (!onChange || isDisabled) return;
+          const newIndex = index + direction;
+          if (newIndex < 0 || newIndex >= sortValues.length) return;
+          
+          const newValues = [...sortValues];
+          const temp = newValues[index];
+          newValues[index] = newValues[newIndex];
+          newValues[newIndex] = temp;
+          
+          onChange(newValues);
+        };
+
         return (
           <div className="space-y-2">
-            {(props.options || []).map((opt, i) => (
-              <div key={i} className="flex items-center p-3 border rounded bg-gray-50 border-gray-200 text-gray-700">
-                <GripVertical className="w-4 h-4 text-gray-400 mr-2" />
-                {opt}
+            {sortValues.map((opt, i) => (
+              <div key={i} className="flex items-center justify-between p-3 border rounded bg-white border-gray-200 text-gray-700 shadow-sm transition-all hover:border-blue-300">
+                <div className="flex items-center">
+                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center text-sm font-bold mr-3">{i + 1}</span>
+                  {opt}
+                </div>
+                {!isDisabled && !isEditMode && (
+                  <div className="flex flex-col">
+                    <button 
+                      type="button"
+                      onClick={() => moveSortItem(i, -1)}
+                      disabled={i === 0}
+                      className={`p-1 ${i === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-blue-600'}`}
+                    >
+                      <ChevronUp className="w-4 h-4" />
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => moveSortItem(i, 1)}
+                      disabled={i === sortValues.length - 1}
+                      className={`p-1 ${i === sortValues.length - 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-blue-600'}`}
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
-            {isEditMode && <p className="text-xs text-gray-400 mt-2">提示：填卷人在真实页面可拖拽上述选项进行排序</p>}
+            {isEditMode && <p className="text-xs text-gray-400 mt-2">提示：填卷人在真实页面可点击箭头进行排序</p>}
           </div>
         );
 
@@ -864,7 +928,6 @@ export default function QuestionRenderer({
         <div className="mt-6 pl-6">
           <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm">
             <div className="text-blue-800 mb-3 font-semibold flex items-center">
-              <MessageSquare className="w-4 h-4 mr-2" />
               全部填写记录 ({responses.length}份)
             </div>
             {responses.length === 0 ? (

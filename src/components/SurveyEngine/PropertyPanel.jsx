@@ -164,7 +164,7 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
         )}
 
         {/* Common: Required */}
-        {props.hasOwnProperty('required') && (
+        {Object.prototype.hasOwnProperty.call(props, 'required') && (
           <div className="flex items-center">
             <input 
               type="checkbox" 

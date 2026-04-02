@@ -6,7 +6,7 @@ export const ROLES = {
   TEACHER: 'teacher'
 };
 
-export const ROLE_PERMISSIONS = {
+const ROLE_PERMISSIONS = {
   [ROLES.ADMIN]: {
     canDelete: true,
     canModifyStructure: true,
@@ -50,15 +50,3 @@ export const hasPermission = (user, permission) => {
   return rolePerms ? !!rolePerms[permission] : false;
 };
 
-// Check if a user can fill a specific question
-export const canFillQuestion = (user, questionPermissions) => {
-  if (!user || !user.role) return false;
-  // If no specific permissions set for the question, assume anyone who can fill can fill it
-  if (!questionPermissions || questionPermissions.length === 0) return hasPermission(user, 'canFill');
-  
-  // Admin/Principal/Director can always fill? The requirement says:
-  // "收到问卷的人不能修改问卷，只能填写自己需要填写的部分"
-  // So even admin should follow question permissions if they are filling? 
-  // Let's assume question permissions apply to everyone strictly when filling.
-  return questionPermissions.includes(user.role);
-};

@@ -48,7 +48,7 @@ export default function RichTextEditor({ value, onChange, disabled, placeholder 
         style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
         data-placeholder={placeholder}
       />
-      <style dangerouslySetContent={{__html: `
+      <style dangerouslySetInnerHTML={{__html: `
         [contenteditable]:empty:before {
           content: attr(data-placeholder);
           color: #9ca3af;

@@ -4,11 +4,7 @@ import {
   BookOpen, 
   Users, 
   Plus, 
-  Search, 
-  Edit, 
-  Trash2,
-  Save,
-  X
+  Search
 } from 'lucide-react';
 import dataService from '../services/dataService';
 
@@ -82,12 +78,12 @@ function SchoolManagement() {
     loadSchools();
   }, []);
 
-  const loadSchools = () => {
-    const data = dataService.getSchools ? dataService.getSchools() : [];
+  const loadSchools = async () => {
+    const data = dataService.getSchools ? await dataService.getSchools() : [];
     setSchools(data);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!currentSchool?.name?.trim()) return;
     
     const existing = schools.filter(s => s.id !== currentSchool.id);
@@ -96,25 +92,49 @@ function SchoolManagement() {
       : { ...currentSchool, id: Date.now().toString(), createdAt: new Date().toISOString() };
       
     const updated = [...existing, newSchool];
-    if (dataService.saveSchools) {
-      dataService.saveSchools(updated);
-    } else {
-      localStorage.setItem('schools', JSON.stringify(updated));
+    try {
+        if (dataService.saveSchools) {
+          await dataService.saveSchools([newSchool]); // 只需要保存这一个或者传全部都行，但 server 接口是处理单个 item
+        } else {
+          localStorage.setItem('schools', JSON.stringify(updated));
+        }
+        
+        // 重新加载数据以确保一致性
+        if (dataService.getSchools) {
+            const freshData = await dataService.getSchools();
+            setSchools(freshData);
+        } else {
+            setSchools(updated);
+        }
+        
+        setIsEditing(false);
+        setCurrentSchool(null);
+    } catch (err) {
+        alert("保存学校信息失败，请检查后端服务是否正常运行 (node server.js)\n" + err.message);
     }
-    setSchools(updated);
-    setIsEditing(false);
-    setCurrentSchool(null);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (!window.confirm('确定要删除这所学校吗？')) return;
-    const updated = schools.filter(s => s.id !== id);
-    if (dataService.saveSchools) {
-      dataService.saveSchools(updated);
-    } else {
-      localStorage.setItem('schools', JSON.stringify(updated));
+    try {
+        const updated = schools.filter(s => s.id !== id);
+        if (dataService.deleteSchool) {
+          await dataService.deleteSchool(id);
+        } else if (dataService.saveSchools) {
+          await dataService.saveSchools(updated);
+        } else {
+          localStorage.setItem('schools', JSON.stringify(updated));
+        }
+        
+        if (dataService.getSchools) {
+            const freshData = await dataService.getSchools();
+            setSchools(freshData);
+        } else {
+            setSchools(updated);
+        }
+    } catch (err) {
+        alert("删除失败，请检查后端服务: " + err.message);
     }
-    setSchools(updated);
   };
 
   return (
@@ -257,12 +277,12 @@ function SubjectManagement() {
     loadSubjects();
   }, []);
 
-  const loadSubjects = () => {
-    const data = dataService.getSubjects ? dataService.getSubjects() : [];
+  const loadSubjects = async () => {
+    const data = dataService.getSubjects ? await dataService.getSubjects() : [];
     setSubjects(data);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!currentSubject?.name?.trim()) return;
     
     const existing = subjects.filter(s => s.id !== currentSubject.id);
@@ -271,25 +291,48 @@ function SubjectManagement() {
       : { ...currentSubject, id: Date.now().toString(), createdAt: new Date().toISOString() };
       
     const updated = [...existing, newSubject];
-    if (dataService.saveSubjects) {
-      dataService.saveSubjects(updated);
-    } else {
-      localStorage.setItem('subjects', JSON.stringify(updated));
+    try {
+        if (dataService.saveSubjects) {
+          await dataService.saveSubjects([newSubject]);
+        } else {
+          localStorage.setItem('subjects', JSON.stringify(updated));
+        }
+        
+        if (dataService.getSubjects) {
+            const freshData = await dataService.getSubjects();
+            setSubjects(freshData);
+        } else {
+            setSubjects(updated);
+        }
+        
+        setIsEditing(false);
+        setCurrentSubject(null);
+    } catch (err) {
+        alert("保存学科信息失败，请检查后端服务是否正常运行\n" + err.message);
     }
-    setSubjects(updated);
-    setIsEditing(false);
-    setCurrentSubject(null);
   };
 
-  const handleDelete = (id) => {
-    if (!window.confirm('确定要删除该学科吗？')) return;
-    const updated = subjects.filter(s => s.id !== id);
-    if (dataService.saveSubjects) {
-      dataService.saveSubjects(updated);
-    } else {
-      localStorage.setItem('subjects', JSON.stringify(updated));
+  const handleDelete = async (id) => {
+    if (!window.confirm('确定要删除这个学科吗？')) return;
+    try {
+        const updated = subjects.filter(s => s.id !== id);
+        if (dataService.deleteSubject) {
+          await dataService.deleteSubject(id);
+        } else if (dataService.saveSubjects) {
+          await dataService.saveSubjects(updated);
+        } else {
+          localStorage.setItem('subjects', JSON.stringify(updated));
+        }
+        
+        if (dataService.getSubjects) {
+            const freshData = await dataService.getSubjects();
+            setSubjects(freshData);
+        } else {
+            setSubjects(updated);
+        }
+    } catch (err) {
+        alert("删除失败，请检查后端服务: " + err.message);
     }
-    setSubjects(updated);
   };
 
   return (
@@ -433,7 +476,7 @@ function GroupManagement() {
   }, []);
 
   const loadData = async () => {
-    const groupData = dataService.getUserGroups ? dataService.getUserGroups() : [];
+    const groupData = dataService.getUserGroups ? await dataService.getUserGroups() : [];
     setGroups(groupData);
     
     // 加载系统用户以供选择
@@ -441,7 +484,7 @@ function GroupManagement() {
     setUsers(userData);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!currentGroup?.name?.trim()) return;
     
     const existing = groups.filter(g => g.id !== currentGroup.id);
@@ -450,25 +493,48 @@ function GroupManagement() {
       : { ...currentGroup, id: Date.now().toString(), createdAt: new Date().toISOString() };
       
     const updated = [...existing, newGroup];
-    if (dataService.saveUserGroups) {
-      dataService.saveUserGroups(updated);
-    } else {
-      localStorage.setItem('userGroups', JSON.stringify(updated));
+    try {
+        if (dataService.saveUserGroups) {
+          await dataService.saveUserGroups([newGroup]);
+        } else {
+          localStorage.setItem('userGroups', JSON.stringify(updated));
+        }
+        
+        if (dataService.getUserGroups) {
+            const freshData = await dataService.getUserGroups();
+            setGroups(freshData);
+        } else {
+            setGroups(updated);
+        }
+        
+        setIsEditing(false);
+        setCurrentGroup(null);
+    } catch (err) {
+        alert("保存分组信息失败，请检查后端服务是否正常运行\n" + err.message);
     }
-    setGroups(updated);
-    setIsEditing(false);
-    setCurrentGroup(null);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (!window.confirm('确定要删除该人员分组吗？')) return;
-    const updated = groups.filter(g => g.id !== id);
-    if (dataService.saveUserGroups) {
-      dataService.saveUserGroups(updated);
-    } else {
-      localStorage.setItem('userGroups', JSON.stringify(updated));
+    try {
+        const updated = groups.filter(g => g.id !== id);
+        if (dataService.deleteUserGroup) {
+          await dataService.deleteUserGroup(id);
+        } else if (dataService.saveUserGroups) {
+          await dataService.saveUserGroups(updated);
+        } else {
+          localStorage.setItem('userGroups', JSON.stringify(updated));
+        }
+        
+        if (dataService.getUserGroups) {
+            const freshData = await dataService.getUserGroups();
+            setGroups(freshData);
+        } else {
+            setGroups(updated);
+        }
+    } catch (err) {
+        alert("删除失败，请检查后端服务: " + err.message);
     }
-    setGroups(updated);
   };
 
   const toggleUserSelection = (userId) => {

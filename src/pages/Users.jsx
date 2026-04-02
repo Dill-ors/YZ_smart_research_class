@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Users as UsersIcon, Plus, Edit2, Trash2, 
-  Search, Shield, CheckCircle, XCircle, Key, History
+  Plus, Search, Shield, CheckCircle, XCircle, Key, History
 } from 'lucide-react';
 import DataService from '../services/dataService';
 import { useAuth } from '../context/AuthContext';
@@ -43,8 +42,11 @@ export default function Users() {
   useEffect(() => {
     loadUsers();
     // Load basic info
-    setSchools(DataService.getSchools());
-    setSubjects(DataService.getSubjects());
+    const loadBasicInfo = async () => {
+      setSchools(await DataService.getSchools());
+      setSubjects(await DataService.getSubjects());
+    };
+    loadBasicInfo();
   }, []);
 
   const filteredUsers = users.filter(u => 

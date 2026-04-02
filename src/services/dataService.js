@@ -181,6 +181,10 @@ const DataService = {
 
   async getSurveys(filters = {}) {
         let surveys = await this._getAllSurveysRaw();
+        let groups = [];
+        if (DataService.getUserGroups) {
+           groups = await DataService.getUserGroups();
+        }
         
         if (filters.currentUser && (filters.currentUser.role === 'teacher' || filters.currentUser.role === 'district_researcher')) {
             surveys = surveys.filter(s => {
@@ -199,7 +203,6 @@ const DataService = {
                     if (target.type === 'school' && target.schools && target.schools.includes(filters.currentUser.school)) return true;
                     if (target.type === 'user' && target.userIds && target.userIds.includes(filters.currentUser.id)) return true;
                     if (target.type === 'group' && target.groupIds) {
-                        const groups = DataService.getUserGroups ? DataService.getUserGroups() : [];
                         const userGroups = groups.filter(g => target.groupIds.includes(g.id) && g.members && g.members.includes(filters.currentUser.id));
                         if (userGroups.length > 0) return true;
                     }
@@ -286,6 +289,11 @@ const DataService = {
       });
       let reports = await res.json();
       
+      let groups = [];
+      if (DataService.getUserGroups) {
+          groups = await DataService.getUserGroups();
+      }
+
       if (filters.currentUser && (filters.currentUser.role === 'teacher' || filters.currentUser.role === 'district_researcher')) {
           reports = reports.filter(r => {
               if (r.publishConfig && r.publishConfig.target) {
@@ -302,7 +310,6 @@ const DataService = {
                   if (target.type === 'school' && target.schools && target.schools.includes(filters.currentUser.school)) return true;
                   if (target.type === 'user' && target.userIds && target.userIds.includes(filters.currentUser.id)) return true;
                   if (target.type === 'group' && target.groupIds) {
-                      const groups = DataService.getUserGroups ? DataService.getUserGroups() : [];
                       const userGroups = groups.filter(g => target.groupIds.includes(g.id) && g.members && g.members.includes(filters.currentUser.id));
                       if (userGroups.length > 0) return true;
                   }
@@ -530,7 +537,8 @@ const DataService = {
           monthlyStats.data.push(count);
       }
 
-      const totalSystemSchools = this.getSchools().length;
+      const schoolsData = await this.getSchools();
+      const totalSystemSchools = schoolsData.length;
       return {
           schoolCount: schoolSet.size,
           totalSurveys: surveys.length,
@@ -583,40 +591,119 @@ const DataService = {
       };
   },
 
-  getSchools() {
-      const data = localStorage.getItem('schools');
-      return data ? JSON.parse(data) : [
-          { id: '1', name: '市北四实验', region: '市北区', type: '高中' },
-          { id: '2', name: '青岛五十三中', region: '市北区', type: '初中' }
-      ];
+  async getSchools() {
+        try {
+            const res = await fetch(`${getApiBase()}/schools`);
+            if (!res.ok) throw new Error('Failed to fetch');
+            const data = await res.json();
+            // 如果后端正常返回了数组（即便是空数组），都应该使用后端的数据，而不是回退到假数据
+            if (Array.isArray(data)) return data;
+        } catch (e) {
+            console.error('Fetch schools error:', e);
+        }
+        return [
+            { id: '1', name: '市北四实验', region: '市北区', type: '高中' },
+            { id: '2', name: '青岛五十三中', region: '市北区', type: '初中' }
+        ];
+    },
+
+    async saveSchools(schools) {
+        for (const s of schools) {
+            const res = await fetch(`${getApiBase()}/schools`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(s)
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                console.error('Save schools failed on server:', text);
+                throw new Error(`保存失败: ${res.status} ${text}`);
+            }
+        }
+    },
+
+  async deleteSchool(id) {
+      try {
+          await fetch(`${getApiBase()}/schools/${id}`, { method: 'DELETE' });
+      } catch (e) {
+          console.error('Delete school error:', e);
+      }
   },
 
-  saveSchools(schools) {
-      localStorage.setItem('schools', JSON.stringify(schools));
+  async getSubjects() {
+        try {
+            const res = await fetch(`${getApiBase()}/subjects`);
+            if (!res.ok) throw new Error('Failed to fetch');
+            const data = await res.json();
+            if (Array.isArray(data)) return data;
+        } catch (e) {
+            console.error('Fetch subjects error:', e);
+        }
+        return [
+            { id: '1', name: '语文', code: 'YU', type: '通用' },
+            { id: '2', name: '数学', code: 'SHU', type: '通用' },
+            { id: '3', name: '英语', code: 'YING', type: '通用' },
+            { id: '4', name: '物理', code: 'WU', type: '通用' },
+            { id: '5', name: '化学', code: 'HUA', type: '通用' }
+        ];
+    },
+
+    async saveSubjects(subjects) {
+        for (const s of subjects) {
+            const res = await fetch(`${getApiBase()}/subjects`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(s)
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                console.error('Save subjects failed on server:', text);
+                throw new Error(`保存失败: ${res.status} ${text}`);
+            }
+        }
+    },
+
+  async deleteSubject(id) {
+      try {
+          await fetch(`${getApiBase()}/subjects/${id}`, { method: 'DELETE' });
+      } catch (e) {
+          console.error('Delete subject error:', e);
+      }
   },
 
-  getSubjects() {
-      const data = localStorage.getItem('subjects');
-      return data ? JSON.parse(data) : [
-          { id: '1', name: '语文', code: 'YU', type: '通用' },
-          { id: '2', name: '数学', code: 'SHU', type: '通用' },
-          { id: '3', name: '英语', code: 'YING', type: '通用' },
-          { id: '4', name: '物理', code: 'WU', type: '通用' },
-          { id: '5', name: '化学', code: 'HUA', type: '通用' }
-      ];
+  async getUserGroups() {
+      try {
+          const res = await fetch(`${getApiBase()}/userGroups`);
+          if (!res.ok) throw new Error('Failed to fetch');
+          const data = await res.json();
+          return data || [];
+      } catch (e) {
+          console.error('Fetch userGroups error:', e);
+          return [];
+      }
   },
 
-  saveSubjects(subjects) {
-      localStorage.setItem('subjects', JSON.stringify(subjects));
-  },
+  async saveUserGroups(groups) {
+        for (const g of groups) {
+            const res = await fetch(`${getApiBase()}/userGroups`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(g)
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                console.error('Save userGroups failed on server:', text);
+                throw new Error(`保存失败: ${res.status} ${text}`);
+            }
+        }
+    },
 
-  getUserGroups() {
-      const data = localStorage.getItem('userGroups');
-      return data ? JSON.parse(data) : [];
-  },
-
-  saveUserGroups(groups) {
-      localStorage.setItem('userGroups', JSON.stringify(groups));
+  async deleteUserGroup(id) {
+      try {
+          await fetch(`${getApiBase()}/userGroups/${id}`, { method: 'DELETE' });
+      } catch (e) {
+          console.error('Delete userGroup error:', e);
+      }
   }
 };
 

@@ -32,16 +32,18 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
       setAllUsers(users);
       
       if (DataService.getUserGroups) {
-        const groups = DataService.getUserGroups();
+        const groups = await DataService.getUserGroups();
         setAllGroups(groups);
       }
       
       if (DataService.getSchools) {
-        setSchools(DataService.getSchools().map(s => s.name));
+        const schoolsData = await DataService.getSchools();
+        setSchools(schoolsData.map(s => s.name));
       }
       
       if (DataService.getSubjects) {
-        setSubjects(['全部', ...DataService.getSubjects().map(s => s.name)]);
+        const subjectsData = await DataService.getSubjects();
+        setSubjects(['全部', ...subjectsData.map(s => s.name)]);
       }
     };
     fetchData();

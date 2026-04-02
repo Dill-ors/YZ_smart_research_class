@@ -26,6 +26,9 @@ function initDb() {
     db.run(`CREATE TABLE IF NOT EXISTS targets (id TEXT PRIMARY KEY, data TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, data TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS responses (id TEXT PRIMARY KEY, data TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS schools (id TEXT PRIMARY KEY, data TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS subjects (id TEXT PRIMARY KEY, data TEXT)`);
+    db.run(`CREATE TABLE IF NOT EXISTS userGroups (id TEXT PRIMARY KEY, data TEXT)`);
   });
 }
 
@@ -92,13 +95,16 @@ setupTableRoutes('users');
 setupTableRoutes('targets');
 setupTableRoutes('reports');
 setupTableRoutes('responses');
+setupTableRoutes('schools');
+setupTableRoutes('subjects');
+setupTableRoutes('userGroups');
 
 // Restore data endpoint
 app.post('/api/restore', (req, res) => {
-  const { surveys, users, targets, reports, responses } = req.body;
+  const { surveys, users, targets, reports, responses, schools, subjects, userGroups } = req.body;
   
   db.serialize(() => {
-    const tables = ['surveys', 'users', 'targets', 'reports', 'responses'];
+    const tables = ['surveys', 'users', 'targets', 'reports', 'responses', 'schools', 'subjects', 'userGroups'];
     tables.forEach(table => {
       db.run(`DELETE FROM ${table}`);
     });
@@ -119,6 +125,9 @@ app.post('/api/restore', (req, res) => {
     insertData('targets', targets);
     insertData('reports', reports);
     insertData('responses', responses);
+    insertData('schools', schools);
+    insertData('subjects', subjects);
+    insertData('userGroups', userGroups);
   });
 
   res.json({ message: 'Restore successful' });

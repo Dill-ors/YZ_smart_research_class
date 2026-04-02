@@ -16,13 +16,14 @@ import {
 } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import DataService from '../services/dataService';
-import { Calendar, CheckCircle, Clock, AlertCircle, ArrowRight, Filter, User, BookOpen, Target } from 'lucide-react';
+import { Calendar, CheckCircle, Clock, AlertCircle, ArrowRight, Filter, User, BookOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const Dashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [completionStats, setCompletionStats] = useState(null);
+  const [unsubmittedReportsCount, setUnsubmittedReportsCount] = useState(0);
   const [filters, setFilters] = useState({
     school: '',
     subject: '',
@@ -34,13 +35,15 @@ const Dashboard = () => {
   const [subjects, setSubjects] = useState([]);
 
   useEffect(() => {
-    DataService.init().then(() => {
+    DataService.init().then(async () => {
       loadStats();
       if (DataService.getSchools) {
-        setSchools(DataService.getSchools().map(s => s.name));
+        const schoolsData = await DataService.getSchools();
+        setSchools(schoolsData.map(s => s.name));
       }
       if (DataService.getSubjects) {
-        setSubjects(DataService.getSubjects().map(s => s.name));
+        const subjectsData = await DataService.getSubjects();
+        setSubjects(subjectsData.map(s => s.name));
       }
     });
   }, [filters]);
@@ -55,6 +58,18 @@ const Dashboard = () => {
     // For recent surveys, managers should see all recent surveys, teachers/researchers only see their own
     const surveyFilters = isManager ? {} : { currentUser: user };
     const surveys = await DataService.getSurveys(surveyFilters);
+    
+    // Fetch group survey unsubmitted count for non-managers
+    if (!isManager) {
+        const reports = await DataService.getReports({ currentUser: user });
+        const allResponses = await DataService.getResponses();
+        const unsubmittedCount = reports.filter(report => {
+            if (report.status !== 'published') return false;
+            const hasSubmitted = allResponses.some(r => r.surveyId === report.id && r.userId === user?.username);
+            return !hasSubmitted;
+        }).length;
+        setUnsubmittedReportsCount(unsubmittedCount);
+    }
     
     setStats({ ...data, recentSurveys: surveys.slice(0, 5) });
     setCompletionStats(compStats);
@@ -186,7 +201,9 @@ const Dashboard = () => {
           { label: '调研学校数', value: stats.schoolCount, unit: '所', color: 'text-blue-600', bg: 'bg-blue-50' },
           { label: '总体完成率', value: completionStats ? `${completionStats.overallPercentage}%` : '0%', unit: '', color: 'text-green-600', bg: 'bg-green-50' },
           { label: '调研总次数', value: stats.totalSurveys, unit: '节', color: 'text-purple-600', bg: 'bg-purple-50' },
-          { label: '未达标人数', value: completionStats ? completionStats.incompleteUsers.length : 0, unit: '人', color: 'text-orange-600', bg: 'bg-orange-50' },
+          isManager 
+            ? { label: '未达标人数', value: completionStats ? completionStats.incompleteUsers.length : 0, unit: '人', color: 'text-orange-600', bg: 'bg-orange-50' }
+            : { label: '未填写报告数', value: unsubmittedReportsCount, unit: '份', color: 'text-orange-600', bg: 'bg-orange-50' }
         ].map((stat, index) => (
           <div key={index} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start">
