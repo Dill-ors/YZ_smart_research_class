@@ -1,3 +1,4 @@
+// ... (Keep existing imports)
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
@@ -15,9 +16,32 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.error('Error opening database', err);
   } else {
     console.log('Connected to SQLite database.');
-    initDb();
+    
+    // 开启 WAL 模式及相关优化以提升并发性能
+    db.serialize(() => {
+      db.run('PRAGMA journal_mode = WAL;');
+      db.run('PRAGMA synchronous = NORMAL;');
+      db.run('PRAGMA busy_timeout = 5000;');
+      db.run('PRAGMA temp_store = MEMORY;');
+      initDb();
+    });
   }
 });
+
+// A simple queue to guarantee sequential execution of writes for each table to avoid SQLITE_CONSTRAINT entirely
+const writeQueue = {};
+
+function enqueueWrite(tableName, task) {
+  if (!writeQueue[tableName]) {
+    writeQueue[tableName] = Promise.resolve();
+  }
+  // Add task to the queue and ALWAYS return a new promise that resolves when the task finishes
+  writeQueue[tableName] = writeQueue[tableName].then(() => {
+    return task().catch(err => {
+      console.error('Queue task error:', err);
+    });
+  });
+}
 
 function initDb() {
   db.serialize(() => {
@@ -59,21 +83,45 @@ const setupTableRoutes = (tableName) => {
     const idStr = item.id.toString();
     const dataStr = JSON.stringify(item);
 
-    db.get(`SELECT id FROM ${tableName} WHERE id = ?`, [idStr], (err, row) => {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-      if (row) {
-        db.run(`UPDATE ${tableName} SET data = ? WHERE id = ?`, [dataStr, idStr], function(err) {
-          if (err) return res.status(500).json({ error: err.message });
-          res.json({ message: 'updated', item });
+    // 对于 sqlite3 的单文件数据库，UPSERT ON CONFLICT 虽然原生，
+    // 但如果在同一毫秒内多并发请求针对同一新主键做操作，即使 SQLite WAL 也会因为约束检查的竞态条件报错。
+    // 所以在 Node 层用 Promise 队列把针对同一个表的并发写入排队处理，从根本上解决高并发写入同一记录的冲突。
+    enqueueWrite(tableName, () => {
+      return new Promise((resolve) => {
+        db.get(`SELECT id FROM ${tableName} WHERE id = ?`, [idStr], (err, row) => {
+          if (err) {
+            res.status(500).json({ error: err.message });
+            return resolve();
+          }
+          
+          if (row) {
+            // 已存在，则执行 UPDATE
+            db.run(`UPDATE ${tableName} SET data = ? WHERE id = ?`, [dataStr, idStr], function(updateErr) {
+              if (updateErr) res.status(500).json({ error: updateErr.message });
+              else res.json({ message: 'updated', item });
+              resolve();
+            });
+          } else {
+            // 不存在，则执行 INSERT
+            db.run(`INSERT INTO ${tableName} (id, data) VALUES (?, ?)`, [idStr, dataStr], function(insertErr) {
+              if (insertErr) {
+                // Handle rare race conditions where another insert sneaked in
+                if (insertErr.code === 'SQLITE_CONSTRAINT') {
+                   db.run(`UPDATE ${tableName} SET data = ? WHERE id = ?`, [dataStr, idStr], function(upErr) {
+                      if (upErr) res.status(500).json({ error: upErr.message });
+                      else res.json({ message: 'updated', item });
+                      resolve();
+                   });
+                   return;
+                }
+                res.status(500).json({ error: insertErr.message });
+              }
+              else res.json({ message: 'inserted', item });
+              resolve();
+            });
+          }
         });
-      } else {
-        db.run(`INSERT INTO ${tableName} (id, data) VALUES (?, ?)`, [idStr, dataStr], function(err) {
-          if (err) return res.status(500).json({ error: err.message });
-          res.json({ message: 'inserted', item });
-        });
-      }
+      });
     });
   });
 
