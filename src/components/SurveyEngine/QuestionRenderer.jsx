@@ -649,11 +649,97 @@ export default function QuestionRenderer({
         );
 
       case 'upload':
+        const handleFileUpload = async (e) => {
+            const files = Array.from(e.target.files);
+            if (!files.length) return;
+
+            // Check max files
+            const currentFiles = (Array.isArray(value) ? value : []);
+            if (currentFiles.length + files.length > (props.maxFiles || 1)) {
+                alert(`最多只能上传 ${props.maxFiles || 1} 个文件`);
+                return;
+            }
+
+            // Mock upload process
+            const newFiles = [];
+            for (const file of files) {
+                // Check size
+                const sizeMB = file.size / (1024 * 1024);
+                if (sizeMB > (props.maxSize || 10)) {
+                    alert(`文件 ${file.name} 超过大小限制 ${props.maxSize || 10}MB`);
+                    continue;
+                }
+
+                // Convert to data URL for preview
+                const dataUrl = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(file);
+                });
+
+                newFiles.push({
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    url: dataUrl
+                });
+            }
+
+            if (newFiles.length > 0 && onChange) {
+                onChange([...currentFiles, ...newFiles]);
+            }
+        };
+
+        const removeFile = (indexToRemove) => {
+            if (onChange && value && Array.isArray(value)) {
+                onChange(value.filter((_, idx) => idx !== indexToRemove));
+            }
+        };
+
         return (
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center text-gray-500 bg-gray-50">
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center text-gray-500 bg-gray-50 relative">
+            <input 
+                type="file" 
+                multiple={props.maxFiles > 1}
+                accept={props.accept}
+                onChange={handleFileUpload}
+                disabled={isDisabled}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-20"
+            />
             <UploadIcon className="w-8 h-8 mb-2 text-gray-400" />
             <p className="text-sm font-medium">点击或拖拽文件到此处上传</p>
             <p className="text-xs mt-1">支持格式: {props.accept}，最多 {props.maxFiles} 个，单个不超过 {props.maxSize}MB</p>
+            
+            {Array.isArray(value) && value.length > 0 && (
+                <div className="mt-4 w-full grid grid-cols-2 sm:grid-cols-3 gap-4 relative z-30">
+                    {value.map((file, idx) => (
+                        <div key={idx} className="relative group rounded-md border border-gray-200 overflow-hidden bg-white">
+                            {file.type && file.type.startsWith('image/') ? (
+                                <img src={file.url} alt={file.name} className="w-full h-24 object-cover" />
+                            ) : (
+                                <div className="w-full h-24 flex items-center justify-center bg-gray-100">
+                                    <FileText className="w-8 h-8 text-gray-400" />
+                                </div>
+                            )}
+                            <div className="p-2 text-xs truncate bg-white" title={file.name}>
+                                {file.name}
+                            </div>
+                            {!isDisabled && (
+                                <button 
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        removeFile(idx);
+                                    }}
+                                    className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                    <Trash2 className="w-3 h-3" />
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
           </div>
         );
 

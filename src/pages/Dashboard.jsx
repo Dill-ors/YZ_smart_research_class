@@ -17,17 +17,18 @@ import {
 import { useAuth } from '../context/AuthContext';
 import DataService from '../services/dataService';
 import { Calendar, CheckCircle, Clock, AlertCircle, ArrowRight, Filter, User, BookOpen } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [completionStats, setCompletionStats] = useState(null);
   const [unsubmittedReportsCount, setUnsubmittedReportsCount] = useState(0);
   const [filters, setFilters] = useState({
     school: '',
     subject: '',
-    observer: user?.role === 'district_researcher' ? user.name : '',
+    observer: ['district_researcher', 'teacher'].includes(user?.role) ? user.name : '',
     timeSpan: 'all'
   });
 
@@ -53,7 +54,7 @@ const Dashboard = () => {
     
     // For dashboard stats, dataService will handle the isManager logic now
     const data = await DataService.getDashboardStats({ ...filters, currentUser: user });
-    const compStats = await DataService.getCompletionStats();
+    const compStats = await DataService.getCompletionStats(user);
     
     // For recent surveys, managers should see all recent surveys, teachers/researchers only see their own
     const surveyFilters = isManager ? {} : { currentUser: user };
@@ -164,19 +165,21 @@ const Dashboard = () => {
             </div>
 
             {/* Observer Filter */}
-            <div className="relative">
-                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                     <User className="h-4 w-4 text-gray-400" />
-                 </div>
-                 <select 
-                     className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
-                     value={filters.observer}
-                     onChange={(e) => handleFilterChange('observer', e.target.value)}
-                 >
-                     <option value="">所有教研员</option>
-                     {stats.allObservers?.map(o => <option key={o} value={o}>{o}</option>)}
-                 </select>
-            </div>
+            {isManager && (
+              <div className="relative">
+                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                       <User className="h-4 w-4 text-gray-400" />
+                   </div>
+                   <select 
+                       className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
+                       value={filters.observer}
+                       onChange={(e) => handleFilterChange('observer', e.target.value)}
+                   >
+                       <option value="">所有教研员</option>
+                       {stats.allObservers?.map(o => <option key={o} value={o}>{o}</option>)}
+                   </select>
+              </div>
+            )}
 
             {/* School Filter */}
             <div className="relative">
@@ -199,7 +202,7 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
           { label: '调研学校数', value: stats.schoolCount, unit: '所', color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: '总体完成率', value: completionStats ? `${completionStats.overallPercentage}%` : '0%', unit: '', color: 'text-green-600', bg: 'bg-green-50' },
+          { label: '总体完成率', value: isManager ? (completionStats ? `${completionStats.overallPercentage}%` : '0%') : (targetStats.target > 0 ? `${Math.round((targetStats.completed / targetStats.target) * 100)}%` : '0%'), unit: '', color: 'text-green-600', bg: 'bg-green-50' },
           { label: '调研总次数', value: stats.totalSurveys, unit: '节', color: 'text-purple-600', bg: 'bg-purple-50' },
           isManager 
             ? { label: '未达标人数', value: completionStats ? completionStats.incompleteUsers.length : 0, unit: '人', color: 'text-orange-600', bg: 'bg-orange-50' }
@@ -328,7 +331,7 @@ const Dashboard = () => {
                           {item.researcherName ? `${item.researcherName} (教研员)` : item.observer}
                         </span>
                       </div>
-                      <Link to={`/observations/${item.id}`} className="block bg-gray-50 p-3 rounded-lg border border-gray-100 hover:border-blue-200 transition-colors">
+                      <Link to={`/observations/fill/${item.id}`} className="block bg-gray-50 p-3 rounded-lg border border-gray-100 hover:border-blue-200 transition-colors">
                         <p className="text-sm font-medium text-gray-800">{item.grade}{item.subject} - {item.teacher}</p>
                         <div className="flex gap-2 mt-2 flex-wrap">
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-white text-gray-600 border border-gray-200">
@@ -508,7 +511,11 @@ const Dashboard = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {/* Use DataService to get a few recent records */}
               {(stats?.recentSurveys || []).map((survey) => (
-                <tr key={survey.id} className="hover:bg-gray-50">
+                <tr 
+                  key={survey.id} 
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => navigate(`/observations/fill/${survey.id}`)}
+                >
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{survey.subject}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{survey.school}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{survey.teacher}</td>

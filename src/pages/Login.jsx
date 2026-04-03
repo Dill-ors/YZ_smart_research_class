@@ -60,7 +60,7 @@ const Login = () => {
                 type="text"
                 required
                 className="appearance-none rounded-none rounded-t-md relative block w-full px-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="用户名 (如: admin, teacher1)"
+                placeholder="用户名（输入您的中文姓名）"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
@@ -73,7 +73,7 @@ const Login = () => {
                 type="password"
                 required
                 className="appearance-none rounded-none rounded-b-md relative block w-full px-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="密码 (默认: 123)"
+                placeholder="请输入密码"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -89,13 +89,6 @@ const Login = () => {
             >
               登录
             </button>
-          </div>
-          
-          <div className="mt-4 text-xs text-gray-500 text-center">
-            <p>测试账号示例:</p>
-            <p>admin (系统管理员) | director (区主任)</p>
-            <p>researcher1 (区调研员) | principal1 (赵校长)</p>
-            <p>teacher1 (孙老师, 数学) | teacher2 (张老师, 物理)</p>
           </div>
         </form>
       </div>

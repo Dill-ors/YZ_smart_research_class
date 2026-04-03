@@ -29,7 +29,7 @@ const MainLayout = () => {
     { name: '听课记录', path: '/observations', icon: FileText, roles: ['admin', 'district_director', 'district_researcher', 'principal', 'teacher'] },
     { name: '集中调研', path: '/reports', icon: FileText, roles: ['admin', 'district_director', 'district_researcher', 'principal', 'teacher'] },
     { name: '目标管理', path: '/targets', icon: Target, roles: ['admin', 'district_director', 'principal'] },
-    { name: '用户管理', path: '/users', icon: Users, roles: ['admin'] },
+    { name: '用户管理', path: '/users', icon: Users, roles: ['admin', 'district_director'] },
     { name: '基础信息', path: '/basic-info', icon: Database, roles: ['admin', 'district_director'] },
     { name: '系统设置', path: '/settings', icon: Settings, roles: ['admin', 'district_director'] },
   ];

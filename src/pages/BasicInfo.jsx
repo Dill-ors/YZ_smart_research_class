@@ -95,16 +95,12 @@ function SchoolManagement() {
     try {
         if (dataService.saveSchools) {
           await dataService.saveSchools([newSchool]); // 只需要保存这一个或者传全部都行，但 server 接口是处理单个 item
-        } else {
-          localStorage.setItem('schools', JSON.stringify(updated));
         }
         
         // 重新加载数据以确保一致性
         if (dataService.getSchools) {
             const freshData = await dataService.getSchools();
             setSchools(freshData);
-        } else {
-            setSchools(updated);
         }
         
         setIsEditing(false);
@@ -117,20 +113,16 @@ function SchoolManagement() {
   const handleDelete = async (id) => {
     if (!window.confirm('确定要删除这所学校吗？')) return;
     try {
-        const updated = schools.filter(s => s.id !== id);
         if (dataService.deleteSchool) {
           await dataService.deleteSchool(id);
         } else if (dataService.saveSchools) {
+          const updated = schools.filter(s => s.id !== id);
           await dataService.saveSchools(updated);
-        } else {
-          localStorage.setItem('schools', JSON.stringify(updated));
         }
         
         if (dataService.getSchools) {
             const freshData = await dataService.getSchools();
             setSchools(freshData);
-        } else {
-            setSchools(updated);
         }
     } catch (err) {
         alert("删除失败，请检查后端服务: " + err.message);
@@ -294,15 +286,11 @@ function SubjectManagement() {
     try {
         if (dataService.saveSubjects) {
           await dataService.saveSubjects([newSubject]);
-        } else {
-          localStorage.setItem('subjects', JSON.stringify(updated));
         }
         
         if (dataService.getSubjects) {
             const freshData = await dataService.getSubjects();
             setSubjects(freshData);
-        } else {
-            setSubjects(updated);
         }
         
         setIsEditing(false);
@@ -315,20 +303,16 @@ function SubjectManagement() {
   const handleDelete = async (id) => {
     if (!window.confirm('确定要删除这个学科吗？')) return;
     try {
-        const updated = subjects.filter(s => s.id !== id);
         if (dataService.deleteSubject) {
           await dataService.deleteSubject(id);
         } else if (dataService.saveSubjects) {
+          const updated = subjects.filter(s => s.id !== id);
           await dataService.saveSubjects(updated);
-        } else {
-          localStorage.setItem('subjects', JSON.stringify(updated));
         }
         
         if (dataService.getSubjects) {
             const freshData = await dataService.getSubjects();
             setSubjects(freshData);
-        } else {
-            setSubjects(updated);
         }
     } catch (err) {
         alert("删除失败，请检查后端服务: " + err.message);
@@ -496,15 +480,11 @@ function GroupManagement() {
     try {
         if (dataService.saveUserGroups) {
           await dataService.saveUserGroups([newGroup]);
-        } else {
-          localStorage.setItem('userGroups', JSON.stringify(updated));
         }
         
         if (dataService.getUserGroups) {
             const freshData = await dataService.getUserGroups();
             setGroups(freshData);
-        } else {
-            setGroups(updated);
         }
         
         setIsEditing(false);
@@ -517,20 +497,16 @@ function GroupManagement() {
   const handleDelete = async (id) => {
     if (!window.confirm('确定要删除该人员分组吗？')) return;
     try {
-        const updated = groups.filter(g => g.id !== id);
         if (dataService.deleteUserGroup) {
           await dataService.deleteUserGroup(id);
         } else if (dataService.saveUserGroups) {
+          const updated = groups.filter(g => g.id !== id);
           await dataService.saveUserGroups(updated);
-        } else {
-          localStorage.setItem('userGroups', JSON.stringify(updated));
         }
         
         if (dataService.getUserGroups) {
             const freshData = await dataService.getUserGroups();
             setGroups(freshData);
-        } else {
-            setGroups(updated);
         }
     } catch (err) {
         alert("删除失败，请检查后端服务: " + err.message);

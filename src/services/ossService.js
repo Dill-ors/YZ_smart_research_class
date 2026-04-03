@@ -12,41 +12,14 @@ const OSS_CONFIG = {
 * @returns {Promise<Object>} - The response data { url, fileName, ossId }
 */
 export async function uploadToOSS(file) {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const timestamp = Date.now().toString();
-
-  try {
-      const response = await fetch(OSS_CONFIG.uploadUrl, {
-          method: 'POST',
-          mode: 'cors',
-          headers: {
-              'X-AK': OSS_CONFIG.accessKey,
-              'X-SIGN': OSS_CONFIG.secretKey,
-              'X-TS': timestamp
-          },
-          body: formData
-      });
-
-      if (!response.ok) {
-          throw new Error(`Upload failed with status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      if (result.code === 200) {
-          return result.data;
-      } else {
-          throw new Error(result.msg || 'Upload failed');
-      }
-  } catch (error) {
-        console.error('OSS Upload Error:', error);
-        // 检测是否为 CORS 或网络错误
-        if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-            console.warn('CORS Error detected. The server needs to allow cross-origin requests from this domain.');
-            throw new Error('网络请求失败 (可能是 CORS 跨域限制)。请联系后端开通跨域权限，或使用代理。');
-        }
-        throw error;
-    }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve({ url: reader.result, fileName: file.name, ossId: Date.now().toString() });
+    };
+    reader.onerror = () => {
+      reject(new Error('图片读取失败'));
+    };
+    reader.readAsDataURL(file);
+  });
 }

@@ -466,7 +466,22 @@ const DataService = {
       const surveys = await this.getSurveys(statsFilters);
       const accessibleSurveys = await this.getSurveys({ currentUser: statsFilters.currentUser });
       
-      const allObservers = [...new Set(accessibleSurveys.map(s => s.observer).filter(Boolean))];
+      const users = await this.getAllUsers();
+      let validObservers = [];
+      if (filters.currentUser) {
+          if (filters.currentUser.role === 'admin' || filters.currentUser.role === 'district_director') {
+              validObservers = users.filter(u => u.role === 'district_researcher' || u.role === 'teacher').map(u => u.name);
+          } else if (filters.currentUser.role === 'principal') {
+              validObservers = users.filter(u => u.role === 'teacher' && u.school === filters.currentUser.school).map(u => u.name);
+          } else {
+              validObservers = [filters.currentUser.name];
+          }
+      } else {
+          validObservers = users.filter(u => u.role === 'district_researcher' || u.role === 'teacher').map(u => u.name);
+      }
+      const surveyObservers = accessibleSurveys.map(s => s.observer).filter(Boolean);
+      const allObservers = [...new Set([...validObservers, ...surveyObservers])];
+      
       const allSchools = [...new Set(accessibleSurveys.map(s => s.school).filter(Boolean))];
       const allSubjects = [...new Set(accessibleSurveys.map(s => s.subject).filter(Boolean))];
 
@@ -554,13 +569,39 @@ const DataService = {
       };
   },
 
-  async getCompletionStats() {
+  async getCompletionStats(currentUser = null) {
       const targets = await this.getTargets();
       const users = await this.getAllUsers();
       const surveys = await this._getAllSurveysRaw();
       
-      const completionData = targets.map(target => {
-          const user = users.find(u => u.username === target.userId) || { name: target.userId };
+      // Determine managed users if currentUser is provided
+      let managedUsernames = null;
+      if (currentUser) {
+          let managedUsers = [];
+          if (currentUser.role === 'district_director' || currentUser.role === 'admin') {
+              managedUsers = [...managedUsers, ...users.filter(u => u.role === 'district_researcher')];
+          }
+          if (currentUser.role === 'principal' || currentUser.role === 'admin' || currentUser.role === 'district_director') {
+              const teachers = users.filter(u => u.role === 'teacher');
+              if (currentUser.role === 'principal') {
+                  managedUsers = [...managedUsers, ...teachers.filter(t => t.school === currentUser.school)];
+              } else {
+                  managedUsers = [...managedUsers, ...teachers];
+              }
+          }
+          managedUsernames = managedUsers.map(u => u.username);
+      }
+
+      // Filter targets to only include those for existing users and managed users
+      const validTargets = targets.filter(t => {
+          const userExists = users.some(u => u.username === t.userId);
+          if (!userExists) return false;
+          if (managedUsernames && !managedUsernames.includes(t.userId)) return false;
+          return true;
+      });
+
+      const completionData = validTargets.map(target => {
+          const user = users.find(u => u.username === target.userId);
           const userSurveys = surveys.filter(s => s.observer === user.name && s.status === 'completed');
           const completedCount = userSurveys.length;
           const targetCount = parseInt(target.targetValue) || 0;

@@ -162,6 +162,29 @@ export const exportReport = async (surveyData, responses = [], targetUsers = [],
         const maxStar = q.maxStar || 5;
         
         htmlContent += `<p style="margin: 5px 0 5px 20px;"><strong>平均评分：</strong> ${avgScore} / ${maxStar} （共 ${count} 人参与评分）</p>`;
+      } else if (q.type === 'upload') {
+        htmlContent += `<div style="margin: 5px 0 5px 20px;">`;
+        let hasFiles = false;
+        latestResponses.forEach(r => {
+            const ans = r.answers?.[q.id];
+            if (Array.isArray(ans) && ans.length > 0) {
+                hasFiles = true;
+                htmlContent += `<p style="margin: 5px 0; color: #666;">用户 <strong>${r.userName || '匿名'}</strong> 上传的文件：</p>`;
+                htmlContent += `<div style="margin-bottom: 10px;">`;
+                ans.forEach(file => {
+                    if (file.type && file.type.startsWith('image/')) {
+                        htmlContent += `<img src="${file.url}" alt="${file.name}" style="max-width: 200px; max-height: 200px; object-fit: contain; border: 1px solid #ccc; padding: 2px; margin-right: 10px; margin-bottom: 10px;" />`;
+                    } else {
+                        htmlContent += `<div style="padding: 10px; border: 1px solid #ccc; background-color: #f9f9f9; font-size: 10pt; display: inline-block; margin-right: 10px; margin-bottom: 10px;">📎 ${file.name}</div>`;
+                    }
+                });
+                htmlContent += `</div>`;
+            }
+        });
+        if (!hasFiles) {
+            htmlContent += `<p style="color: #666;">暂无上传文件</p>`;
+        }
+        htmlContent += `</div>`;
       } else if (q.type === 'sort') {
         const options = q.options || [];
         const rankScores = {};

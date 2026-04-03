@@ -10,7 +10,7 @@ import { Navigate } from 'react-router-dom';
 export default function Users() {
   const { user } = useAuth();
   
-  if (user?.role !== 'admin') {
+  if (user?.role !== 'admin' && user?.role !== 'district_director') {
     return <Navigate to="/" replace />;
   }
   
