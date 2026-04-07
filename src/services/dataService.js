@@ -231,26 +231,19 @@ const DataService = {
         if (filters.lesson_type && filters.lesson_type !== 'ALL') surveys = surveys.filter(s => s.lesson_type === filters.lesson_type);
         if (filters.survey_mode && filters.survey_mode !== 'ALL') surveys = surveys.filter(s => s.survey_mode === filters.survey_mode);
         
-        if (filters.timeSpan && filters.timeSpan !== 'all') {
-          const now = new Date();
-          let startDate = new Date();
-          
-          switch (filters.timeSpan) {
-              case 'week': startDate.setDate(now.getDate() - 7); break;
-              case 'month': startDate.setDate(now.getDate() - 30); break;
-              case 'three_months': startDate.setMonth(now.getMonth() - 3); break;
-              case 'semester': startDate.setMonth(now.getMonth() - 6); break;
-              case 'year': startDate.setFullYear(now.getFullYear() - 1); break;
-              case 'three_years': startDate.setFullYear(now.getFullYear() - 3); break;
-              default: break;
-          }
-
-          surveys = surveys.filter(s => {
-              if (!s.date) return false;
-              const surveyDate = new Date(s.date);
-              return surveyDate >= startDate;
-          });
-      }
+        if (filters.filterTime || filters.filterTimeEnd) {
+            surveys = surveys.filter(s => {
+                if (!s.date) return false;
+                const surveyDate = s.date;
+                if (filters.filterTimeType === 'single') {
+                    if (filters.filterTime && surveyDate !== filters.filterTime) return false;
+                } else {
+                    if (filters.filterTime && surveyDate < filters.filterTime) return false;
+                    if (filters.filterTimeEnd && surveyDate > filters.filterTimeEnd) return false;
+                }
+                return true;
+            });
+        }
 
       return surveys.sort((a, b) => new Date(b.date) - new Date(a.date));
   },

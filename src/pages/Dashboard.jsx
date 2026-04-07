@@ -29,7 +29,9 @@ const Dashboard = () => {
     school: '',
     subject: '',
     observer: ['district_researcher', 'teacher'].includes(user?.role) ? user.name : '',
-    timeSpan: 'all'
+    filterTimeType: 'single',
+    filterTime: '',
+    filterTimeEnd: ''
   });
 
   const [schools, setSchools] = useState([]);
@@ -131,23 +133,49 @@ const Dashboard = () => {
         </div>
         
         <div className="flex-1 flex flex-wrap gap-3">
-             {/* Time Span Filter */}
-            <div className="relative">
-                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                     <Calendar className="h-4 w-4 text-gray-400" />
-                 </div>
+             {/* Time Filter */}
+             <div className="flex items-center flex-wrap gap-2">
                  <select 
-                     className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
-                     value={filters.timeSpan}
-                     onChange={(e) => handleFilterChange('timeSpan', e.target.value)}
+                     value={filters.filterTimeType}
+                     onChange={(e) => {
+                       handleFilterChange('filterTimeType', e.target.value);
+                       if (e.target.value === 'single') handleFilterChange('filterTimeEnd', '');
+                     }}
+                     className="block w-32 py-2 px-3 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
                  >
-                     <option value="all">全部时间</option>
-                     <option value="week">本周</option>
-                     <option value="month">本月</option>
-                     <option value="semester">本学期</option>
-                     <option value="year">本学年</option>
+                     <option value="single">具体某一天</option>
+                     <option value="range">时间段</option>
                  </select>
-            </div>
+                 
+                 <div className="relative flex items-center">
+                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                         <Calendar className="h-4 w-4 text-gray-400" />
+                     </div>
+                     <input 
+                         type="date" 
+                         value={filters.filterTime} 
+                         onChange={(e) => handleFilterChange('filterTime', e.target.value)}
+                         className="block w-full pl-10 pr-3 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors"
+                     />
+                 </div>
+                 
+                 {filters.filterTimeType === 'range' && (
+                     <>
+                         <span className="text-gray-500 text-sm">至</span>
+                         <div className="relative flex items-center">
+                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                 <Calendar className="h-4 w-4 text-gray-400" />
+                             </div>
+                             <input 
+                                 type="date" 
+                                 value={filters.filterTimeEnd} 
+                                 onChange={(e) => handleFilterChange('filterTimeEnd', e.target.value)}
+                                 className="block w-full pl-10 pr-3 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors"
+                             />
+                         </div>
+                     </>
+                 )}
+             </div>
 
             {/* Subject Filter */}
             <div className="relative">
