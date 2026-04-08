@@ -41,7 +41,8 @@ export default function QuestionRenderer({
   value,
   onChange,
   mode,
-  responses = []
+  responses = [],
+  displayNumber = ""
 }) {
   const { type, label, required, allowedRoles, allowedUsers, ...props } = question;
 
@@ -67,9 +68,10 @@ export default function QuestionRenderer({
       case 'title':
         return (
           <div className={`text-${props.align} mb-4`}>
-            {props.level === 'h1' && <h1 className="text-3xl font-bold text-gray-900">{label}</h1>}
-            {props.level === 'h2' && <h2 className="text-2xl font-semibold text-gray-800">{label}</h2>}
-            {props.level === 'h3' && <h3 className="text-xl font-medium text-gray-800">{label}</h3>}
+            {props.level === 'h1' && <h1 className="text-3xl font-bold text-gray-900">{displayNumber}{label}</h1>}
+            {props.level === 'h2' && <h2 className="text-2xl font-semibold text-gray-800">{displayNumber}{label}</h2>}
+            {props.level === 'h3' && <h3 className="text-xl font-medium text-gray-800">{displayNumber}{label}</h3>}
+            {props.level === 'h4' && <h4 className="text-lg font-medium text-gray-700">{displayNumber}{label}</h4>}
             {props.description && <p className="mt-2 text-gray-600 whitespace-pre-wrap">{props.description}</p>}
           </div>
         );
@@ -991,7 +993,7 @@ export default function QuestionRenderer({
       {!['title', 'text', 'pagination'].includes(type) && (
         <div className={`flex items-start ${type === 'blank' && props.layout === 'horizontal' ? 'items-center mb-0' : 'mb-4'}`}>
           <div className={`font-semibold text-gray-800 text-lg ${type === 'blank' && props.layout === 'horizontal' ? 'mr-4 whitespace-nowrap' : 'flex-1'}`}>
-            {label}
+            {displayNumber}{label}
             {required && <span className="text-red-500 ml-1">*</span>}
           </div>
           {type === 'blank' && props.layout === 'horizontal' && (

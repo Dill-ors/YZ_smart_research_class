@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ObservationList from './pages/ObservationList';
 import ObservationForm from './pages/ObservationForm';
+import ScheduleList from './pages/ScheduleList';
 import Reports from './pages/Reports';
 import Targets from './pages/Targets';
 import Users from './pages/Users';
@@ -37,6 +38,7 @@ function App() {
             <Route path="observations/new" element={<ObservationForm />} />
             <Route path="observations/edit/:id" element={<ObservationForm />} />
             <Route path="observations/fill/:id" element={<ObservationForm mode="fill" />} />
+            <Route path="schedules" element={<ScheduleList />} />
             <Route path="reports" element={<Reports />} />
             <Route path="targets" element={<Targets />} />
             <Route path="users" element={<Users />} />

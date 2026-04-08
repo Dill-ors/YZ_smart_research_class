@@ -162,7 +162,12 @@ const DataService = {
         { id: 'mock_6', school: '市北四实验', grade: '初二', class: '11班', subject: '数学', teacher: '吕老师', observer: '孙老师', date: '2026-03-08', topic: '数据的收集与整理', lesson_type: 'experiment', status: 'completed' },
         { id: 'mock_7', school: '市北四实验', grade: '初二', class: '13班', subject: '数学', teacher: '李老师', observer: '王教研员', date: '2026-03-05', topic: '勾股定理', lesson_type: 'new', status: 'completed' },
         { id: 'mock_8', school: '市北四实验', grade: '初二', class: '1班', subject: '英语', teacher: '张老师', observer: '李调研员', date: '2026-03-04', topic: 'Unit 3 Reading', lesson_type: 'new', status: 'completed' },
-        { id: 'mock_9', school: '市北四实验', grade: '初二', class: '3班', subject: '物理', teacher: '王老师', observer: '赵校长', date: '2026-03-03', topic: '力的作用', lesson_type: 'experiment', status: 'completed' }
+        { id: 'mock_9', school: '市北四实验', grade: '初二', class: '3班', subject: '物理', teacher: '王老师', observer: '赵校长', date: '2026-03-03', topic: '力的作用', lesson_type: 'experiment', status: 'completed' },
+        // 示例日程数据
+        { id: 'mock_10', school: '市北四实验', grade: '初三', class: '1班', subject: '数学', teacher: '孙老师', observer: '王教研员', date: '2026-04-10', topic: '二次函数复习', lesson_type: 'review', status: 'scheduled' },
+        { id: 'mock_11', school: '青岛五十三中', grade: '高一', class: '2班', subject: '英语', teacher: '张老师', observer: '李调研员', date: '2026-04-11', topic: 'Unit 5 Grammar', lesson_type: 'new', status: 'scheduled' },
+        { id: 'mock_12', school: '市北实验中学', grade: '初二', class: '4班', subject: '物理', teacher: '王老师', observer: '赵调研员', date: '2026-04-12', topic: '光学实验', lesson_type: 'experiment', status: 'scheduled' },
+        { id: 'mock_13', school: '市北四实验', grade: '高二', class: '3班', subject: '化学', teacher: '李老师', observer: '孙调研员', date: '2026-04-15', topic: '有机化学基础', lesson_type: 'new', status: 'scheduled' }
     ];
     for (const s of initialSurveys) {
       await this.addSurvey(s);
@@ -185,17 +190,24 @@ const DataService = {
         if (DataService.getUserGroups) {
            groups = await DataService.getUserGroups();
         }
-        
-        if (filters.currentUser && (filters.currentUser.role === 'teacher' || filters.currentUser.role === 'district_researcher')) {
+
+        // 默认只显示已完成的记录，除非明确指定其他状态
+        if (!filters.status) {
+            surveys = surveys.filter(s => s.status === 'completed');
+        } else if (filters.status !== 'ALL') {
+            surveys = surveys.filter(s => s.status === filters.status);
+        }
+
+        // 教师角色过滤（移除 district_researcher，现在与教师对齐）
+        if (filters.currentUser && filters.currentUser.role === 'teacher') {
             surveys = surveys.filter(s => {
                 // If it's explicitly assigned to them
                 if (s.publishConfig && s.publishConfig.target) {
                     const target = s.publishConfig.target;
                     if (target.type === 'all') return true;
-                    
+
                     const roleMap = {
-                      'teacher': '教师',
-                      'district_researcher': '区调研员'
+                      'teacher': '教师'
                     };
                     const roleName = roleMap[filters.currentUser.role];
 
@@ -207,17 +219,17 @@ const DataService = {
                         if (userGroups.length > 0) return true;
                     }
                 }
-                
+
                 // Also if they are the observer, they can see it (in case they somehow created it or are marked as observer)
                 if (s.observer === filters.currentUser.name) return true;
-                
+
                 return false;
             });
         }
 
         if (filters.search) {
             const search = filters.search.toLowerCase();
-            surveys = surveys.filter(s => 
+            surveys = surveys.filter(s =>
                 (s.school && s.school.toLowerCase().includes(search)) ||
                 (s.teacher && s.teacher.toLowerCase().includes(search)) ||
                 (s.subject && s.subject.toLowerCase().includes(search)) ||
@@ -230,7 +242,29 @@ const DataService = {
         if (filters.observer && filters.observer !== 'ALL') surveys = surveys.filter(s => s.observer === filters.observer);
         if (filters.lesson_type && filters.lesson_type !== 'ALL') surveys = surveys.filter(s => s.lesson_type === filters.lesson_type);
         if (filters.survey_mode && filters.survey_mode !== 'ALL') surveys = surveys.filter(s => s.survey_mode === filters.survey_mode);
-        
+
+        // 新增 timeSpan 过滤
+        if (filters.timeSpan && filters.timeSpan !== 'all') {
+          const now = new Date();
+          let startDate = new Date();
+
+          switch (filters.timeSpan) {
+              case 'week': startDate.setDate(now.getDate() - 7); break;
+              case 'month': startDate.setDate(now.getDate() - 30); break;
+              case 'three_months': startDate.setMonth(now.getMonth() - 3); break;
+              case 'semester': startDate.setMonth(now.getMonth() - 6); break;
+              case 'year': startDate.setFullYear(now.getFullYear() - 1); break;
+              case 'three_years': startDate.setFullYear(now.getFullYear() - 3); break;
+              default: break;
+          }
+
+          surveys = surveys.filter(s => {
+              if (!s.date) return false;
+              const surveyDate = new Date(s.date);
+              return surveyDate >= startDate;
+          });
+        }
+
         if (filters.filterTime || filters.filterTimeEnd) {
             surveys = surveys.filter(s => {
                 if (!s.date) return false;
@@ -253,7 +287,24 @@ const DataService = {
       return surveys.find(s => s.id === id);
   },
 
-  async addSurvey(surveyData) {
+  async addSurvey(surveyData, currentUser = null) {
+      // 权限检查 - 必须提供用户信息
+      if (!currentUser) {
+        throw new Error('必须提供用户信息');
+      }
+
+      const school = surveyData.school;
+      const role = currentUser.role;
+
+      // 管理员、区教研主任、校长需要检查学校权限
+      if (role === 'admin' || role === 'district_director' || role === 'principal') {
+        const hasPermission = await this._checkSchedulePermission(currentUser, school);
+        if (!hasPermission) {
+          throw new Error(`无权为学校"${school}"添加日程`);
+        }
+      }
+      // 教师可以直接创建听课记录（针对任何学校），无需额外权限检查
+
       const newSurvey = {
           id: surveyData.id || Date.now().toString(),
           createdAt: surveyData.createdAt || new Date().toISOString(),
@@ -268,7 +319,109 @@ const DataService = {
       return newSurvey;
   },
 
-  async deleteSurvey(id) {
+  async updateSurvey(id, updateData, currentUser = null) {
+      // 权限检查 - 必须提供用户信息
+      if (!currentUser) {
+        throw new Error('必须提供用户信息');
+      }
+
+      // 获取所有调研数据
+      const surveys = await this._getAllSurveysRaw();
+      const existingSurvey = surveys.find(s => s.id === id);
+
+      if (!existingSurvey) {
+          throw new Error(`找不到ID为${id}的调研记录`);
+      }
+
+      // 权限检查
+      const userRole = currentUser.role;
+      const userName = currentUser.name;
+
+      // 特殊情况：教师填写听课记录
+      if (userRole === 'teacher') {
+        // 教师只能更新自己作为听课人的记录
+        if (existingSurvey.observer !== userName) {
+          throw new Error(`无权更新其他人的日程安排`);
+        }
+
+        // 教师可以更新听课内容相关字段，但不能更改学校、听课人、学科等关键字段
+        // 检查教师是否尝试更改不允许的字段
+        const restrictedFields = ['school', 'subject', 'observer', 'researcherName', 'date'];
+        const attemptedRestrictedUpdate = Object.keys(updateData).some(key =>
+          restrictedFields.includes(key) && updateData[key] !== existingSurvey[key]
+        );
+
+        if (attemptedRestrictedUpdate) {
+          throw new Error(`教师无权更改学校、学科、听课人等关键信息`);
+        }
+      } else {
+        // 其他角色使用原有的权限检查逻辑
+        // 检查用户是否有权管理原始学校
+        const originalSchool = existingSurvey.school;
+        const hasPermissionForOriginal = await this._checkSchedulePermission(currentUser, originalSchool);
+        if (!hasPermissionForOriginal) {
+          throw new Error(`无权更新学校"${originalSchool}"的日程`);
+        }
+
+        // 如果尝试更改学校，检查新学校的权限
+        if (updateData.school && updateData.school !== originalSchool) {
+          const hasPermissionForNew = await this._checkSchedulePermission(currentUser, updateData.school);
+          if (!hasPermissionForNew) {
+            throw new Error(`无权将日程转移到学校"${updateData.school}"`);
+          }
+        }
+      }
+
+      // 合并更新数据
+      const updatedSurvey = {
+          ...existingSurvey,
+          ...updateData,
+          // 保留原始ID
+          id: existingSurvey.id
+      };
+
+      // 使用POST请求更新（后端可能需要处理更新逻辑）
+      await fetch(`${getApiBase()}/surveys`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedSurvey)
+      });
+
+      return updatedSurvey;
+  },
+
+  async deleteSurvey(id, currentUser = null) {
+      // 权限检查 - 必须提供用户信息
+      if (!currentUser) {
+        throw new Error('必须提供用户信息');
+      }
+
+      // 权限检查：需要获取要删除的日程
+      const surveys = await this._getAllSurveysRaw();
+      const surveyToDelete = surveys.find(s => s.id === id);
+
+      if (!surveyToDelete) {
+        throw new Error(`找不到ID为${id}的调研记录`);
+      }
+
+      const userRole = currentUser.role;
+      const userName = currentUser.name;
+
+      // 特殊情况：教师可以删除自己作为听课人的记录
+      if (userRole === 'teacher') {
+        if (surveyToDelete.observer !== userName) {
+          throw new Error(`无权删除其他人的听课记录`);
+        }
+        // 教师可以删除自己的记录，继续执行删除
+      } else {
+        // 其他角色使用原有的权限检查逻辑
+        const school = surveyToDelete.school;
+        const hasPermission = await this._checkSchedulePermission(currentUser, school);
+        if (!hasPermission) {
+          throw new Error(`无权删除学校"${school}"的日程`);
+        }
+      }
+
       await fetch(`${getApiBase()}/surveys/${id}`, { method: 'DELETE' });
   },
 
@@ -287,15 +440,15 @@ const DataService = {
           groups = await DataService.getUserGroups();
       }
 
-      if (filters.currentUser && (filters.currentUser.role === 'teacher' || filters.currentUser.role === 'district_researcher')) {
+      // 教师角色过滤（移除 district_researcher，现在与教师对齐）
+      if (filters.currentUser && filters.currentUser.role === 'teacher') {
           reports = reports.filter(r => {
               if (r.publishConfig && r.publishConfig.target) {
                   const target = r.publishConfig.target;
                   if (target.type === 'all') return true;
-                  
+
                   const roleMap = {
-                    'teacher': '教师',
-                    'district_researcher': '区调研员'
+                    'teacher': '教师'
                   };
                   const roleName = roleMap[filters.currentUser.role];
 
@@ -393,14 +546,14 @@ const DataService = {
 
   async getResearcherProgress() {
       const users = await this.getAllUsers();
-      const researchers = users.filter(u => u.role === 'district_researcher');
+      const researchers = users.filter(u => u.role === 'teacher');
       const targets = await this.getTargets();
       const surveys = await this._getAllSurveysRaw();
 
       const progressData = researchers.map(researcher => {
           const userTarget = targets.find(t => t.userId === researcher.username) || { targetValue: 0 };
           const userSurveys = surveys.filter(s => s.researcherName === researcher.name || s.observer === researcher.name);
-          
+
           // Calculate monthly counts
           const monthlyCounts = {};
           userSurveys.forEach(s => {
@@ -421,6 +574,11 @@ const DataService = {
       });
 
       return progressData;
+  },
+
+  async getTeachers() {
+     const users = await this.getAllUsers();
+     return users.filter(u => u.role === 'teacher');
   },
 
   async setTarget(targetData) {
@@ -463,14 +621,14 @@ const DataService = {
       let validObservers = [];
       if (filters.currentUser) {
           if (filters.currentUser.role === 'admin' || filters.currentUser.role === 'district_director') {
-              validObservers = users.filter(u => u.role === 'district_researcher' || u.role === 'teacher').map(u => u.name);
+              validObservers = users.filter(u => u.role === 'teacher').map(u => u.name);
           } else if (filters.currentUser.role === 'principal') {
               validObservers = users.filter(u => u.role === 'teacher' && u.school === filters.currentUser.school).map(u => u.name);
           } else {
               validObservers = [filters.currentUser.name];
           }
       } else {
-          validObservers = users.filter(u => u.role === 'district_researcher' || u.role === 'teacher').map(u => u.name);
+          validObservers = users.filter(u => u.role === 'teacher').map(u => u.name);
       }
       const surveyObservers = accessibleSurveys.map(s => s.observer).filter(Boolean);
       const allObservers = [...new Set([...validObservers, ...surveyObservers])];
@@ -562,35 +720,15 @@ const DataService = {
       };
   },
 
-  async getCompletionStats(currentUser = null) {
+  async getCompletionStats() {
       const targets = await this.getTargets();
       const users = await this.getAllUsers();
       const surveys = await this._getAllSurveysRaw();
-      
-      // Determine managed users if currentUser is provided
-      let managedUsernames = null;
-      if (currentUser) {
-          let managedUsers = [];
-          if (currentUser.role === 'district_director' || currentUser.role === 'admin') {
-              managedUsers = [...managedUsers, ...users.filter(u => u.role === 'district_researcher')];
-          }
-          if (currentUser.role === 'principal' || currentUser.role === 'admin' || currentUser.role === 'district_director') {
-              const teachers = users.filter(u => u.role === 'teacher');
-              if (currentUser.role === 'principal') {
-                  managedUsers = [...managedUsers, ...teachers.filter(t => t.school === currentUser.school)];
-              } else {
-                  managedUsers = [...managedUsers, ...teachers];
-              }
-          }
-          managedUsernames = managedUsers.map(u => u.username);
-      }
 
-      // Filter targets to only include those for existing users and managed users
+      // Filter targets to only include those for existing users
       const validTargets = targets.filter(t => {
           const userExists = users.some(u => u.username === t.userId);
-          if (!userExists) return false;
-          if (managedUsernames && !managedUsernames.includes(t.userId)) return false;
-          return true;
+          return userExists;
       });
 
       const completionData = validTargets.map(target => {
@@ -738,6 +876,175 @@ const DataService = {
       } catch (e) {
           console.error('Delete userGroup error:', e);
       }
+  },
+
+  async _checkSchedulePermission(user, school) {
+    // 检查用户是否有权管理指定学校的日程
+    if (!user || !user.role) {
+      return false;
+    }
+
+    const role = user.role;
+
+    // 管理员可以管理所有学校
+    if (role === 'admin') {
+      return true;
+    }
+
+    // 区教研主任可以管理所辖区域的学校
+    if (role === 'district_director') {
+      if (!user.region) {
+        // 没有区域信息，默认不允许
+        return false;
+      }
+
+      // 获取所有学校数据
+      const allSchools = await this.getSchools();
+      const userRegion = user.region.trim();
+
+      // 检查学校是否在用户区域内
+      const schoolInRegion = allSchools.some(s =>
+        s.name?.trim() === school?.trim() &&
+        s.region?.trim() === userRegion
+      );
+
+      return schoolInRegion;
+    }
+
+    // 校长只能管理自己学校
+    if (role === 'principal') {
+      return user.school?.trim() === school?.trim();
+    }
+
+    // 老师不能管理任何日程
+    if (role === 'teacher') {
+      return false;
+    }
+
+    // 其他角色默认不允许
+    return false;
+  },
+
+  async getSchedules(currentUser, showPast = false) {
+    // 获取所有调研记录
+    const allSurveys = await this._getAllSurveysRaw();
+
+    // 如果没有当前用户信息，返回空数组
+    if (!currentUser) {
+      return [];
+    }
+
+    // 根据用户角色进行过滤
+    const userRole = currentUser.role;
+
+    let filteredSurveys = [];
+
+    // 管理员角色看到所有记录（包括scheduled和completed）
+    if (userRole === 'admin') {
+      filteredSurveys = allSurveys.filter(s => s.status === 'scheduled' || s.status === 'completed');
+    }
+    // 区教研主任角色：如果有region字段，按区域过滤；否则看到所有日程
+    else if (userRole === 'district_director') {
+      // 只显示scheduled状态的记录
+      const scheduledSurveys = allSurveys.filter(s => s.status === 'scheduled');
+
+      // 如果用户有region字段，按区域过滤
+      if (currentUser.region) {
+        // 获取所有学校数据
+        const allSchools = await this.getSchools();
+        const userRegion = currentUser.region?.trim();
+
+        // 获取该区域的所有学校名称（去除空格）
+        const regionSchools = allSchools
+          .filter(school => school.region?.trim() === userRegion)
+          .map(school => school.name?.trim());
+
+        // 如果找到该区域的学校，按区域过滤；否则返回空数组
+        if (regionSchools.length > 0) {
+          filteredSurveys = scheduledSurveys.filter(s =>
+            regionSchools.includes(s.school?.trim())
+          );
+        } else {
+          filteredSurveys = [];
+        }
+      } else {
+        // 没有region字段，看到所有日程
+        filteredSurveys = scheduledSurveys;
+      }
+    }
+    // 校长角色：只看到自己学校的日程
+    else if (userRole === 'principal') {
+      const userSchool = currentUser.school;
+      if (!userSchool) {
+        return [];
+      }
+      // 只显示scheduled状态的记录
+      const scheduledSurveys = allSurveys.filter(s => s.status === 'scheduled');
+      filteredSurveys = scheduledSurveys.filter(s => s.school === userSchool);
+    }
+    // 老师角色：只看到自己作为听课人的相关日程安排
+    else if (userRole === 'teacher') {
+      const userName = currentUser.name;
+      const userRegion = currentUser.region?.trim();
+
+      if (!userName) {
+        return [];
+      }
+
+      // 教师可以看到自己作为听课人的所有记录（包括scheduled和completed）
+      const teacherSurveys = allSurveys.filter(s => s.status === 'scheduled' || s.status === 'completed');
+
+      // 获取学校数据用于区域过滤（如果需要）
+      const allSchools = await this.getSchools();
+
+      if (userRegion) {
+        // 获取该区域的所有学校名称（去除空格）
+        const regionSchools = allSchools
+          .filter(school => school.region?.trim() === userRegion)
+          .map(school => school.name?.trim());
+
+        // 过滤：属于该区域学校且自己是听课人的日程
+        filteredSurveys = teacherSurveys.filter(s =>
+          regionSchools.includes(s.school?.trim()) && s.observer === userName
+        );
+      } else {
+        // 没有区域：只看到自己作为听课人的日程
+        filteredSurveys = teacherSurveys.filter(s => s.observer === userName);
+      }
+    }
+    // 其他角色返回空数组
+    else {
+      return [];
+    }
+
+    // 根据showPast参数过滤日期
+    const now = new Date();
+    const filteredByDate = filteredSurveys.filter(s => {
+      if (!s.date) return false;
+      const scheduleDate = new Date(s.date);
+      if (showPast) {
+        return true; // 显示所有日期（包括过去和未来）
+      } else {
+        return scheduleDate >= now; // 只显示未来日期
+      }
+    });
+
+    // 排序：先按状态（scheduled优先），再按日期降序（最近的在前）
+    return filteredByDate.sort((a, b) => {
+      // 先按状态排序：scheduled在前，completed在后
+      const statusOrder = { 'scheduled': 1, 'completed': 2 };
+      const statusA = statusOrder[a.status] || 3;
+      const statusB = statusOrder[b.status] || 3;
+
+      if (statusA !== statusB) {
+        return statusA - statusB;
+      }
+
+      // 状态相同，按日期降序排序（最近的在前）
+      const dateA = new Date(a.date || 0);
+      const dateB = new Date(b.date || 0);
+      return dateB - dateA;
+    });
   }
 };
 

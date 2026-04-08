@@ -1,3 +1,21 @@
+const toChineseNumber = (num) => {
+  const chineseNumbers = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+  if (num <= 10) {
+    return chineseNumbers[num - 1] || num.toString();
+  } else if (num <= 99) {
+    const tens = Math.floor(num / 10);
+    const units = num % 10;
+    if (units === 0) {
+      return `${chineseNumbers[tens - 1]}十`;
+    } else if (tens === 1) {
+      return `十${chineseNumbers[units - 1]}`;
+    } else {
+      return `${chineseNumbers[tens - 1]}十${chineseNumbers[units - 1]}`;
+    }
+  }
+  return num.toString();
+};
+
 export const exportReport = async (surveyData, responses = [], targetUsers = [], format = 'word') => {
   const { title, description, pages } = surveyData || {};
   const questions = pages ? pages.flat() : [];
@@ -12,45 +30,71 @@ export const exportReport = async (surveyData, responses = [], targetUsers = [],
     `;
 
   // 1. Process normal questions
-    // Keep 'title' and 'text' but handle them specially so they don't get numbered if we don't want to,
-    // or just let them render with their content.
     const normalQuestions = questions.filter(q => q.type !== 'lesson_record' && q.type !== 'pagination');
     if (normalQuestions.length > 0) {
       htmlContent += `<div style="margin-bottom: 40px;">`;
       
-      let questionIndex = 1;
+      // 编号状态跟踪
+      const numbering = { h2: 0, h3: 0, h4: 0 };
       
       normalQuestions.forEach((q) => {
+        // 获取组件的 level
+        const level = q.level || (q.type === 'title' ? (q.titleLevel || 'h1') : 'none');
+        
+        // 计算显示编号
+        let displayNumber = '';
+        if (level !== 'none') {
+          if (level === 'h2') {
+            numbering.h2++;
+            numbering.h3 = 0;
+            numbering.h4 = 0;
+            displayNumber = `${toChineseNumber(numbering.h2)}、`;
+          } else if (level === 'h3') {
+            numbering.h3++;
+            numbering.h4 = 0;
+            displayNumber = `${numbering.h3}. `;
+          } else if (level === 'h4') {
+            numbering.h4++;
+            displayNumber = `${numbering.h3}.${numbering.h4} `;
+          }
+        }
+        
         if (q.type === 'title') {
+           // title 类型组件根据 level 显示编号
+           const titleLevel = q.titleLevel || 'h1';
+           let fontSize = '20pt';
+           if (titleLevel === 'h2') fontSize = '18pt';
+           if (titleLevel === 'h3') fontSize = '16pt';
+           if (titleLevel === 'h4') fontSize = '14pt';
+           
            htmlContent += `
              <div style="margin-bottom: 20px; text-align: ${q.align || 'center'};">
-               <h1 style="font-size: 20pt; font-weight: bold; margin-bottom: 10px;">${q.label || q.title || '未命名标题'}</h1>
+               <h1 style="font-size: ${fontSize}; font-weight: bold; margin-bottom: 10px;">${displayNumber}${q.label || q.title || '未命名标题'}</h1>
                ${q.description ? `<p style="color: #666; font-size: 12pt;">${q.description}</p>` : ''}
              </div>
            `;
-           return; // skip index increment
+           return;
         }
         
         if (q.type === 'text') {
            htmlContent += `
              <div style="margin-bottom: 20px;">
-               ${q.label ? `<h3 style="font-size: 14pt; font-weight: bold; margin-bottom: 10px;">${q.label}</h3>` : ''}
+               ${q.label ? `<h3 style="font-size: 14pt; font-weight: bold; margin-bottom: 10px;">${displayNumber}${q.label}</h3>` : ''}
                <div style="font-size: 12pt; line-height: 1.6; color: #333;">${q.content || ''}</div>
              </div>
            `;
-           return; // skip index increment
+           return;
         }
 
         let headerHtml = '';
         if (q.type === 'blank' || q.type === 'matrix') {
           const displayTitle = q.label || q.title;
           if (displayTitle && displayTitle.trim()) {
-            headerHtml = `<h3 style="font-size: 14pt; font-weight: bold; margin-bottom: 10px;">${displayTitle}</h3>`;
+            headerHtml = `<h3 style="font-size: 14pt; font-weight: bold; margin-bottom: 10px;">${displayNumber}${displayTitle}</h3>`;
           }
         } else {
           const displayTitle = q.label || q.title || '未命名题目';
-          headerHtml = `<h3 style="font-size: 14pt; font-weight: bold; margin-bottom: 10px;">${questionIndex}. ${displayTitle}</h3>`;
-          questionIndex++;
+          headerHtml = `<h3 style="font-size: 14pt; font-weight: bold; margin-bottom: 10px;">${displayNumber}${displayTitle}</h3>`;
         }
 
         htmlContent += `
@@ -195,7 +239,6 @@ export const exportReport = async (surveyData, responses = [], targetUsers = [],
           const ans = r.answers?.[q.id];
           if (Array.isArray(ans) && ans.length > 0) {
             count++;
-            // The first item gets the highest score (n), the last gets 1
             const n = ans.length;
             ans.forEach((opt, idx) => {
               if (rankScores[opt] !== undefined) {
@@ -228,7 +271,7 @@ export const exportReport = async (surveyData, responses = [], targetUsers = [],
         
         if (textAnswers.length > 0) {
           htmlContent += `<ul style="margin: 10px 0 10px 20px; padding-left: 20px;">`;
-          textAnswers.slice(0, 20).forEach(ans => { // Limit to 20 for readability
+          textAnswers.slice(0, 20).forEach(ans => {
             htmlContent += `<li style="margin-bottom: 5px;">${ans}</li>`;
           });
           if (textAnswers.length > 20) {
@@ -247,7 +290,6 @@ export const exportReport = async (surveyData, responses = [], targetUsers = [],
   // 2. Process lesson records
   const lessonRecordQuestions = questions.filter(q => q.type === 'lesson_record');
   if (lessonRecordQuestions.length > 0) {
-    // Aggregate all lesson records
     let allRecords = [];
     lessonRecordQuestions.forEach(q => {
       latestResponses.forEach(r => {
@@ -264,7 +306,6 @@ export const exportReport = async (surveyData, responses = [], targetUsers = [],
           <h2 style="font-size: 18pt; font-weight: bold; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">听课记录汇总</h2>
       `;
 
-      // Group by subject
       const groupedBySubject = allRecords.reduce((acc, rec) => {
         const subject = rec.subject || '其他学科';
         if (!acc[subject]) acc[subject] = [];
@@ -335,14 +376,12 @@ export const exportReport = async (surveyData, responses = [], targetUsers = [],
       xmlns='http://www.w3.org/TR/REC-html40'>
       <head><meta charset='utf-8'><title>Export HTML to Word Document</title></head><body>`;
   const footer = "</body></html>";
-  const sourceHTML = header + htmlContent + footer; // Use raw htmlContent to avoid injected styles affecting Word
+  const sourceHTML = header + htmlContent + footer;
   
-  // Use Blob to avoid Data URI length limits
   const blob = new Blob(['\ufeff', sourceHTML], {
     type: 'application/msword'
   });
   
-  // Create download link
   const url = URL.createObjectURL(blob);
   const fileDownload = document.createElement("a");
   document.body.appendChild(fileDownload);
@@ -350,7 +389,6 @@ export const exportReport = async (surveyData, responses = [], targetUsers = [],
   fileDownload.download = `${title || '调研报告'}.doc`;
   fileDownload.click();
   
-  // Cleanup
   setTimeout(() => {
     document.body.removeChild(fileDownload);
     URL.revokeObjectURL(url);

@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 30
+    },
+    "auditLog": "/Users/sunzhanghao/Desktop/Asun/YZ_smart_research_class/server/logs/.4e7dddc1bfbb00ac4f48604fb3945ae8486dcf17-audit.json",
+    "files": [
+        {
+            "date": 1775548387409,
+            "name": "/Users/sunzhanghao/Desktop/Asun/YZ_smart_research_class/server/logs/error-2026-04-07.log",
+            "hash": "1ecc5310b3f847f11636a4b9a9441efc0451d5b55c902c4e55f5902871196c13"
+        }
+    ],
+    "hashType": "sha256"
+}

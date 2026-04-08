@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  smart-research:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smart-research-class
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - smart-research-data:/app/data
+      - smart-research-logs:/app/logs
+      - smart-research-backups:/app/backups
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DB_PATH=/app/data/database.db
+      - LOG_DIR=/app/logs
+      - JWT_SECRET=${JWT_SECRET:-change-this-in-production-to-a-strong-random-key}
+      - JWT_EXPIRES_IN=7d
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  smart-research-data:
+    driver: local
+  smart-research-logs:
+    driver: local
+  smart-research-backups:
+    driver: local

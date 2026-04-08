@@ -1,21 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
   ResponsiveContainer,
-  PieChart, 
-  Pie, 
+  PieChart,
+  Pie,
   Cell,
   AreaChart,
   Area
 } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import DataService from '../services/dataService';
+import { hasPermission } from '../utils/rbac';
 import { Calendar, CheckCircle, Clock, AlertCircle, ArrowRight, Filter, User, BookOpen } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -25,13 +26,12 @@ const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [completionStats, setCompletionStats] = useState(null);
   const [unsubmittedReportsCount, setUnsubmittedReportsCount] = useState(0);
+  const [schedules, setSchedules] = useState([]);
   const [filters, setFilters] = useState({
     school: '',
     subject: '',
-    observer: ['district_researcher', 'teacher'].includes(user?.role) ? user.name : '',
-    filterTimeType: 'single',
-    filterTime: '',
-    filterTimeEnd: ''
+    observer: !hasPermission(user, 'canManageSchedules') ? user?.name || '' : '',
+    timeSpan: 'all'
   });
 
   const [schools, setSchools] = useState([]);
@@ -52,38 +52,47 @@ const Dashboard = () => {
   }, [filters]);
 
   const loadStats = async () => {
-    const isManager = ['admin', 'district_director', 'principal'].includes(user?.role);
-    
+    const isManager = hasPermission(user, 'canManageSchedules');
+
     // For dashboard stats, dataService will handle the isManager logic now
     const data = await DataService.getDashboardStats({ ...filters, currentUser: user });
-    const compStats = await DataService.getCompletionStats(user);
-    
-    // For recent surveys, managers should see all recent surveys, teachers/researchers only see their own
+    const compStats = await DataService.getCompletionStats();
+
+    // For recent surveys, managers should see all recent surveys, teachers only see their own
     const surveyFilters = isManager ? {} : { currentUser: user };
     const surveys = await DataService.getSurveys(surveyFilters);
-    
-    // Fetch group survey unsubmitted count for non-managers
+
+    // Fetch pending observation records count for teachers
     if (!isManager) {
-        const reports = await DataService.getReports({ currentUser: user });
-        const allResponses = await DataService.getResponses();
-        const unsubmittedCount = reports.filter(report => {
-            if (report.status !== 'published') return false;
-            const hasSubmitted = allResponses.some(r => r.surveyId === report.id && r.userId === user?.username);
-            return !hasSubmitted;
-        }).length;
-        setUnsubmittedReportsCount(unsubmittedCount);
+        const userSchedules = await DataService.getSchedules(user, true);
+        // For teachers, count scheduled observations where they are the observer
+        const pendingObservations = userSchedules.filter(s => s.status === 'scheduled' && s.observer === user?.name);
+        setUnsubmittedReportsCount(pendingObservations.length);
     }
-    
+
     setStats({ ...data, recentSurveys: surveys.slice(0, 5) });
     setCompletionStats(compStats);
+
+    // 获取日程数据 - 只显示已安排（scheduled）的记录，已完成（completed）的记录归位听课记录
+    if (user && DataService.getSchedules) {
+      const userSchedules = await DataService.getSchedules(user, true);
+      // 过滤掉已完成状态，只保留已安排状态
+      const scheduledOnly = userSchedules.filter(s => s.status === 'scheduled');
+      setSchedules(scheduledOnly);
+    }
+  };
+
+  // 判断用户是否可以管理日程
+  const canManageSchedules = () => {
+    return hasPermission(user, 'canManageSchedules');
   };
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
   };
 
-  // Determine if user is a manager (Director or Principal) or Executor (Researcher or Teacher)
-  const isManager = ['admin', 'district_director', 'principal'].includes(user?.role);
+  // Determine if user is a manager (Director or Principal) or Executor (Teacher)
+  const isManager = hasPermission(user, 'canManageSchedules');
   
   // Get Target Data for Executors
   const [targetStats, setTargetStats] = useState({ target: 0, completed: 0 });
@@ -133,56 +142,30 @@ const Dashboard = () => {
         </div>
         
         <div className="flex-1 flex flex-wrap gap-3">
-             {/* Time Filter */}
-             <div className="flex items-center flex-wrap gap-2">
-                 <select 
-                     value={filters.filterTimeType}
-                     onChange={(e) => {
-                       handleFilterChange('filterTimeType', e.target.value);
-                       if (e.target.value === 'single') handleFilterChange('filterTimeEnd', '');
-                     }}
-                     className="block w-32 py-2 px-3 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
-                 >
-                     <option value="single">具体某一天</option>
-                     <option value="range">时间段</option>
-                 </select>
-                 
-                 <div className="relative flex items-center">
-                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                         <Calendar className="h-4 w-4 text-gray-400" />
-                     </div>
-                     <input 
-                         type="date" 
-                         value={filters.filterTime} 
-                         onChange={(e) => handleFilterChange('filterTime', e.target.value)}
-                         className="block w-full pl-10 pr-3 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors"
-                     />
+             {/* Time Span Filter */}
+            <div className="relative">
+                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                     <Calendar className="h-4 w-4 text-gray-400" />
                  </div>
-                 
-                 {filters.filterTimeType === 'range' && (
-                     <>
-                         <span className="text-gray-500 text-sm">至</span>
-                         <div className="relative flex items-center">
-                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                 <Calendar className="h-4 w-4 text-gray-400" />
-                             </div>
-                             <input 
-                                 type="date" 
-                                 value={filters.filterTimeEnd} 
-                                 onChange={(e) => handleFilterChange('filterTimeEnd', e.target.value)}
-                                 className="block w-full pl-10 pr-3 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors"
-                             />
-                         </div>
-                     </>
-                 )}
-             </div>
+                 <select
+                     className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
+                     value={filters.timeSpan}
+                     onChange={(e) => handleFilterChange('timeSpan', e.target.value)}
+                 >
+                     <option value="all">全部时间</option>
+                     <option value="week">本周</option>
+                     <option value="month">本月</option>
+                     <option value="semester">本学期</option>
+                     <option value="year">本学年</option>
+                 </select>
+            </div>
 
             {/* Subject Filter */}
             <div className="relative">
                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                      <BookOpen className="h-4 w-4 text-gray-400" />
                  </div>
-                 <select 
+                 <select
                      className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
                      value={filters.subject}
                      onChange={(e) => handleFilterChange('subject', e.target.value)}
@@ -198,7 +181,7 @@ const Dashboard = () => {
                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                        <User className="h-4 w-4 text-gray-400" />
                    </div>
-                   <select 
+                   <select
                        className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
                        value={filters.observer}
                        onChange={(e) => handleFilterChange('observer', e.target.value)}
@@ -214,7 +197,7 @@ const Dashboard = () => {
                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                      <CheckCircle className="h-4 w-4 text-gray-400" />
                  </div>
-                 <select 
+                 <select
                      className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
                      value={filters.school}
                      onChange={(e) => handleFilterChange('school', e.target.value)}
@@ -259,6 +242,93 @@ const Dashboard = () => {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* 日程模块 */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold text-gray-900">日程安排</h3>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-500">
+              {schedules.length > 0 ? `共 ${schedules.length} 个日程` : '暂无日程'}
+            </span>
+            {canManageSchedules() && (
+              <Link
+                to="/observations/new?status=scheduled"
+                className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              >
+                + 新建日程安排
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {schedules.length > 0 ? (
+          <div className="space-y-3">
+            {schedules.slice(0, 5).map((schedule, index) => {
+              const now = new Date();
+              const scheduleDate = new Date(schedule.date);
+              const isPast = scheduleDate.toDateString() < now.toDateString();
+
+              // 根据状态和日期设置样式
+              let cardBgClass = "bg-gray-50";
+              let calendarBgClass = "bg-blue-100";
+              let calendarIconClass = "text-blue-600";
+              let statusLabel = "已安排";
+              let statusColorClass = "bg-blue-100 text-blue-800";
+
+              if (schedule.status === 'completed') {
+                // 已完成状态
+                cardBgClass = "bg-green-50";
+                calendarBgClass = "bg-green-100";
+                calendarIconClass = "text-green-600";
+                statusLabel = "已完成";
+                statusColorClass = "bg-green-100 text-green-800";
+              } else if (isPast) {
+                // 已过期状态（scheduled且日期过去）
+                cardBgClass = "bg-gray-100";
+                calendarBgClass = "bg-gray-200";
+                calendarIconClass = "text-gray-500";
+                statusLabel = "已过期";
+                statusColorClass = "bg-gray-100 text-gray-600";
+              }
+
+              return (
+                <div key={index} className={`flex items-center p-3 ${cardBgClass} rounded-lg border border-gray-100 hover:bg-gray-200 transition-colors`}>
+                  <div className={`flex-shrink-0 w-10 h-10 ${calendarBgClass} rounded-lg flex items-center justify-center mr-3`}>
+                    <Calendar className={`w-5 h-5 ${calendarIconClass}`} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className={`font-medium ${isPast ? "text-gray-600" : "text-gray-900"}`}>{schedule.subject} - {schedule.teacher}</h4>
+                        <p className={`text-sm ${isPast ? "text-gray-400" : "text-gray-500"} mt-1`}>
+                          {schedule.school} • {schedule.observer} • {schedule.date}
+                        </p>
+                      </div>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColorClass}`}>
+                        {statusLabel}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {schedules.length > 5 && (
+              <div className="text-center pt-2">
+                <Link to="/schedules" className="text-blue-600 text-sm font-medium hover:text-blue-800">
+                  查看全部日程 ({schedules.length})
+                </Link>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="py-8 text-center text-gray-500">
+            <Calendar className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+            <p>暂无近期日程安排</p>
+            <p className="text-sm mt-1">新的听课任务将会在这里显示</p>
+          </div>
+        )}
       </div>
 
       {/* Row 1: Progress & Schedule (Side-by-Side) */}

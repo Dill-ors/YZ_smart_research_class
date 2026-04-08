@@ -60,6 +60,8 @@ const ObservationForm = ({ mode = 'edit' }) => {
   const queryParams = new URLSearchParams(location.search);
   const isBoardMode = queryParams.get('mode') === 'board';
   const displayMode = isBoardMode ? 'board' : mode;
+  const initialStatus = queryParams.get('status') || 'completed';
+  const fromSchedule = queryParams.get('from') === 'schedule';
   const [formData, setFormData] = useState({
     school: '',
     grade: '',
@@ -86,7 +88,8 @@ const ObservationForm = ({ mode = 'edit' }) => {
     overall_evaluation: '',
     recordMode: 'simple', // 'standard' | 'photo' | 'custom' | 'simple'
     images: [], // array of image urls
-    customSurveyData: null // for custom mode
+    customSurveyData: null, // for custom mode
+    status: initialStatus // 'completed' | 'scheduled'
   });
 
   useEffect(() => {
@@ -100,11 +103,15 @@ const ObservationForm = ({ mode = 'edit' }) => {
           }
         } else {
           alert('记录不存在');
-          navigate('/observations');
+          if (fromSchedule) {
+            navigate('/schedules');
+          } else {
+            navigate('/observations');
+          }
         }
       });
     }
-  }, [id, navigate]);
+  }, [id, navigate, fromSchedule]);
 
   const [availableGrades, setAvailableGrades] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
@@ -244,27 +251,51 @@ const ObservationForm = ({ mode = 'edit' }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Automatically set the observer to the current user's name if they are a teacher or researcher
+
+    // Get current user from context/localStorage
     const userStr = localStorage.getItem('currentUser');
-    const user = userStr ? JSON.parse(userStr) : null;
+    const currentUser = userStr ? JSON.parse(userStr) : null;
+
+    if (!currentUser) {
+      alert('用户未登录');
+      return;
+    }
+
     const finalData = { ...formData, recordMode };
-    
-    if (user && (user.role === 'teacher' || user.role === 'district_researcher')) {
-        finalData.observer = user.name;
-        // Milestone 7: 记录教研员信息
-        if (user.role === 'district_researcher') {
-            finalData.researcherName = user.name;
-        }
+
+    // For teachers, auto-set observer to their name
+    if (currentUser.role === 'teacher') {
+      finalData.observer = currentUser.name;
+    }
+
+    // If filling a scheduled observation, mark it as completed
+    if (id && finalData.status === 'scheduled') {
+      finalData.status = 'completed';
     }
 
     if (recordMode === 'custom') {
-        // Handle custom mode submit via SurveyEngine callback, not here
-        return;
+      // Handle custom mode submit via SurveyEngine callback, not here
+      return;
     }
 
-    await DataService.addSurvey(finalData);
-    navigate('/observations');
+    try {
+      if (id) {
+        // Update existing record
+        await DataService.updateSurvey(id, finalData, currentUser);
+      } else {
+        // Create new record
+        await DataService.addSurvey(finalData, currentUser);
+      }
+
+      // Navigate back based on source
+      if (fromSchedule) {
+        navigate('/schedules');
+      } else {
+        navigate('/observations');
+      }
+    } catch (error) {
+      alert(`保存失败: ${error.message}`);
+    }
   };
 
   return (
@@ -534,15 +565,32 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     // For custom mode fill
                     const finalData = { ...formData, recordMode, customSurveyData: formData.customSurveyData, customAnswers: answers };
                     const userStr = localStorage.getItem('currentUser');
-                    const user = userStr ? JSON.parse(userStr) : null;
-                    if (user && (user.role === 'teacher' || user.role === 'district_researcher')) {
-                        finalData.observer = user.name;
-                        if (user.role === 'district_researcher') {
-                            finalData.researcherName = user.name;
-                        }
+                    const currentUser = userStr ? JSON.parse(userStr) : null;
+
+                    if (currentUser && currentUser.role === 'teacher') {
+                        finalData.observer = currentUser.name;
                     }
-                    await DataService.addSurvey(finalData);
-                    navigate('/observations');
+
+                    // If filling a scheduled observation, mark it as completed
+                    if (id && finalData.status === 'scheduled') {
+                        finalData.status = 'completed';
+                    }
+
+                    try {
+                        if (id) {
+                            await DataService.updateSurvey(id, finalData, currentUser);
+                        } else {
+                            await DataService.addSurvey(finalData, currentUser);
+                        }
+
+                        if (fromSchedule) {
+                            navigate('/schedules');
+                        } else {
+                            navigate('/observations');
+                        }
+                    } catch (error) {
+                        alert(`保存失败: ${error.message}`);
+                    }
                 }}
                 onCancel={() => navigate('/observations')} 
               />

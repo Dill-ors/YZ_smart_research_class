@@ -140,12 +140,32 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
         {type !== 'pagination' && type !== 'lesson_record' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">标题/问题内容</label>
-            <textarea 
-              value={props.label || ''} 
+            <textarea
+              value={props.label || ''}
               onChange={(e) => handleChange('label', e.target.value)}
               className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               rows={3}
             />
+          </div>
+        )}
+
+        {/* Common: Title Level for all question types that have labels */}
+        {type !== 'pagination' && type !== 'text' && type !== 'title' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">标题文本级别</label>
+            <select
+              value={props.level || 'none'}
+              onChange={(e) => handleChange('level', e.target.value)}
+              className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            >
+              <option value="none">普通文本（不参与编号）</option>
+              <option value="h2">一级标题（一、）</option>
+              <option value="h3">二级标题（1.）</option>
+              <option value="h4">三级标题（1.1）</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              选择标题级别后，该题目将参与自动编号并显示在大纲导航中
+            </p>
           </div>
         )}
         
@@ -192,6 +212,7 @@ export default function PropertyPanel({ selectedQuestion, updateQuestion, onClos
                 <option value="h1">主标题 (H1)</option>
                 <option value="h2">副标题 (H2)</option>
                 <option value="h3">小标题 (H3)</option>
+                <option value="h4">节点标题 (H4)</option>
               </select>
             </div>
             <div>

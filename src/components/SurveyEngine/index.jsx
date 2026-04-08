@@ -1,5 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { Save, Eye, ArrowLeft, Download, BarChart2, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Save, Eye, ArrowLeft, Download, BarChart2, RefreshCw, Menu, ListTree, Settings2 } from 'lucide-react';
+
+// Convert number to Chinese number
+const toChineseNumber = (num) => {
+  const chineseNumbers = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+  if (num <= 10) {
+    return chineseNumbers[num - 1] || num.toString();
+  } else if (num <= 99) {
+    const tens = Math.floor(num / 10);
+    const units = num % 10;
+    if (units === 0) {
+      return `${chineseNumbers[tens - 1]}十`;
+    } else if (tens === 1) {
+      return `十${chineseNumbers[units - 1]}`;
+    } else {
+      return `${chineseNumbers[tens - 1]}十${chineseNumbers[units - 1]}`;
+    }
+  }
+  return num.toString();
+};
 import { QUESTION_TYPES } from './QuestionTypes';
 import QuestionRenderer from './QuestionRenderer';
 import PropertyPanel from './PropertyPanel';
@@ -38,6 +57,112 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
   // Global settings
   const [title, setTitle] = useState(initialData?.title || '未命名调研问卷');
   const [description] = useState(initialData?.description || '');
+
+  // Panel toggle states
+  const [showComponentLibrary, setShowComponentLibrary] = useState(true);
+  const [showOutline, setShowOutline] = useState(true);
+  
+  // Auto numbering state
+  const [autoNumbering, setAutoNumbering] = useState(true);
+  
+  // Extract outline from questions with auto numbering
+  const { outline, questionNumbers } = useMemo(() => {
+    const numbering = { h2: 0, h3: 0, h4: 0 };
+    const questionNumbers = {};
+
+    const outline = questions.map((q, index) => {
+      let level = 3; // Default to lowest level
+      let titleText = q.label || '未命名题目';
+      let numberedTitle = titleText;
+      let displayNumber = ''; // 用于在标题行显示的编号
+
+      if (q.type === 'title' && autoNumbering) {
+        switch (q.level) {
+          case 'h1':
+            level = 0; // H1 是主标题，级别最高
+            numberedTitle = titleText; // H1不编号
+            displayNumber = '';
+            break;
+          case 'h2':
+            level = 1;
+            numbering.h2++;
+            numbering.h3 = 0; // Reset H3 counter
+            numbering.h4 = 0; // Reset H4 counter
+            displayNumber = `${toChineseNumber(numbering.h2)}、`;
+            numberedTitle = `${displayNumber}${titleText}`;
+            break;
+          case 'h3':
+            level = 2;
+            numbering.h3++;
+            numbering.h4 = 0; // Reset H4 counter for this H3
+            displayNumber = `${numbering.h3}. `;
+            numberedTitle = `${displayNumber}${titleText}`;
+            break;
+          case 'h4':
+            level = 3;
+            numbering.h4++;
+            displayNumber = `${numbering.h3}.${numbering.h4} `;
+            numberedTitle = `${displayNumber}${titleText}`;
+            break;
+          default:
+            numberedTitle = titleText;
+            displayNumber = '';
+        }
+      }
+      // 处理其他设置了 level 的组件（radio, checkbox, matrix, rate, sort, upload, blank, lesson_record）
+      else if (q.level && q.level !== 'none' && autoNumbering) {
+        switch (q.level) {
+          case 'h2':
+            level = 1;
+            numbering.h2++;
+            numbering.h3 = 0;
+            numbering.h4 = 0;
+            displayNumber = `${toChineseNumber(numbering.h2)}、`;
+            numberedTitle = `${displayNumber}${titleText}`;
+            break;
+          case 'h3':
+            level = 2;
+            numbering.h3++;
+            numbering.h4 = 0;
+            displayNumber = `${numbering.h3}. `;
+            numberedTitle = `${displayNumber}${titleText}`;
+            break;
+          case 'h4':
+            level = 3;
+            numbering.h4++;
+            displayNumber = `${numbering.h3}.${numbering.h4} `;
+            numberedTitle = `${displayNumber}${titleText}`;
+            break;
+          default:
+            numberedTitle = titleText;
+            displayNumber = '';
+        }
+      }
+      // level === 'none' 或没有 level，不参与编号
+      else {
+        // 尝试从标题文本中检测级别（兼容性处理）
+        if (titleText.match(/^[一二三四五六七八九十]+、/)) {
+          level = 1;
+        } else if (titleText.match(/^\d+\./)) {
+          level = 2;
+        }
+        displayNumber = '';
+      }
+
+      questionNumbers[q.id] = displayNumber;
+
+      return {
+        id: q.id,
+        title: numberedTitle,
+        originalTitle: titleText,
+        level,
+        index,
+        displayNumber
+      };
+    });
+
+    return { outline, questionNumbers };
+  }, [questions, autoNumbering]);
 
   // Add a new question
   const handleAddQuestion = (qType) => {
@@ -174,7 +299,33 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
         </div>
         <div className="flex items-center gap-4">
           {mode !== 'fill' && (
-            <div className="flex bg-gray-100 p-1 rounded-lg">
+            <div className="flex bg-gray-100 p-1 rounded-lg mr-2">
+              {activeTab === 'edit' && (
+                <>
+                  <button 
+                    onClick={() => setShowComponentLibrary(!showComponentLibrary)}
+                    className={`p-1.5 rounded-md ${showComponentLibrary ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                    title="切换题型库面板"
+                  >
+                    <Menu className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => setShowOutline(!showOutline)}
+                    className={`p-1.5 rounded-md ${showOutline ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                    title="切换大纲导航"
+                  >
+                    <ListTree className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => setAutoNumbering(!autoNumbering)}
+                    className={`p-1.5 rounded-md ${autoNumbering ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                    title="切换自动编号"
+                  >
+                    <span className="text-xs font-medium">编号</span>
+                  </button>
+                  <div className="w-px bg-gray-300 mx-1 self-stretch my-1"></div>
+                </>
+              )}
               {mode !== 'board' && (
                 <button 
                   onClick={() => setActiveTab('edit')}
@@ -213,33 +364,66 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
         
         {activeTab === 'edit' && (
           <>
-            {/* Left Sidebar - Components */}
-            <div className="w-64 bg-white border-r shadow-sm flex flex-col h-full overflow-y-auto">
-              <div className="p-4 border-b bg-gray-50 sticky top-0 z-10">
-                <h3 className="font-bold text-gray-700">题型库</h3>
-              </div>
-              <div className="p-4 grid grid-cols-2 gap-2">
-                {QUESTION_TYPES.map((qt) => (
-                  <button
-                    key={qt.type}
-                    onClick={() => handleAddQuestion(qt.type)}
-                    className="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-colors bg-white group"
-                  >
-                    <qt.icon className="w-6 h-6 mb-2 text-gray-500 group-hover:text-blue-500" />
-                    <span className="text-xs font-medium text-gray-700 group-hover:text-blue-600">{qt.label}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="p-4 mt-auto">
-                <div className="bg-blue-50 text-blue-800 text-xs p-3 rounded border border-blue-100 leading-relaxed">
-                  提示：点击左侧题型可将其添加到问卷中。在中间画布中选中题目可在右侧进行详细属性配置。
+            {/* Left Sidebar - Component Library */}
+            {showComponentLibrary && (
+              <div className="w-64 bg-white border-r shadow-sm flex flex-col h-full shrink-0 overflow-y-auto transition-all duration-300">
+                <div className="p-4 border-b bg-gray-50 sticky top-0 z-10 flex justify-between items-center">
+                  <h3 className="font-bold text-gray-700 flex items-center gap-2"><Menu className="w-4 h-4"/> 题型库</h3>
+                </div>
+                <div className="p-4 grid grid-cols-2 gap-2">
+                  {QUESTION_TYPES.map((qt) => (
+                    <button
+                      key={qt.type}
+                      onClick={() => handleAddQuestion(qt.type)}
+                      className="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-colors bg-white group"
+                    >
+                      <qt.icon className="w-6 h-6 mb-2 text-gray-500 group-hover:text-blue-500" />
+                      <span className="text-xs font-medium text-gray-700 group-hover:text-blue-600">{qt.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="p-4 mt-auto">
+                  <div className="bg-blue-50 text-blue-800 text-xs p-3 rounded border border-blue-100 leading-relaxed">
+                    提示：点击左侧题型可将其添加到问卷中。在中间画布中选中题目可在右侧进行详细属性配置。
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* Left Sidebar 2 - Outline Navigation */}
+            {showOutline && (
+              <div className="w-64 bg-gray-50 border-r shadow-inner flex flex-col h-full shrink-0 overflow-y-auto transition-all duration-300">
+                <div className="p-4 border-b bg-white sticky top-0 z-10 flex justify-between items-center shadow-sm">
+                  <h3 className="font-bold text-gray-700 flex items-center gap-2"><ListTree className="w-4 h-4 text-blue-600"/> 大纲导航</h3>
+                </div>
+                <div className="p-2 space-y-1">
+                  {outline.length === 0 ? (
+                    <div className="p-4 text-sm text-gray-400 text-center">暂无大纲内容</div>
+                  ) : (
+                    outline.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setSelectedId(item.id);
+                          document.getElementById(`question-${item.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }}
+                        className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors truncate
+                          ${selectedId === item.id ? 'bg-blue-100 text-blue-700 font-medium border-l-2 border-blue-500' : 'hover:bg-gray-200 text-gray-600 border-l-2 border-transparent'}
+                          ${item.level === 1 ? 'pl-3 font-semibold' : item.level === 2 ? 'pl-6' : 'pl-9 text-xs'}
+                        `}
+                        title={item.title}
+                      >
+                        {item.title}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Center Canvas */}
-            <div className="flex-1 overflow-y-auto p-8" onClick={() => setSelectedId(null)}>
-              <div className="max-w-5xl w-full mx-auto space-y-4">
+            <div className="flex-1 overflow-y-auto p-8 relative bg-gray-100 shadow-inner" onClick={() => setSelectedId(null)}>
+              <div className="max-w-4xl w-full mx-auto space-y-4 pb-32">
                 {questions.length === 0 ? (
                   <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl bg-white text-gray-400">
                     <p className="mb-2">您的问卷还是空的</p>
@@ -247,30 +431,42 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
                   </div>
                 ) : (
                   questions.map((q, idx) => (
-                    <QuestionRenderer
-                      key={q.id}
-                      question={q}
-                      index={null} // 禁用组件自带的全局自动编号
-                      isEditMode={true}
-                      userRole={user?.role}
-                      isSelected={selectedId === q.id}
-                      onSelect={(question) => { setSelectedId(question.id); }}
-                      onDelete={deleteQuestion}
-                      onCopy={copyQuestion}
-                      onMoveUp={() => moveQuestion(idx, -1)}
-                      onMoveDown={() => moveQuestion(idx, 1)}
-                    />
+                    <div id={`question-${q.id}`} key={q.id}>
+                      <QuestionRenderer
+                        question={q}
+                        index={null} // 禁用组件自带的全局自动编号
+                        displayNumber={questionNumbers[q.id] || ''}
+                        isEditMode={true}
+                        userRole={user?.role}
+                        isSelected={selectedId === q.id}
+                        onSelect={(question) => { setSelectedId(question.id); }}
+                        onDelete={deleteQuestion}
+                        onCopy={copyQuestion}
+                        onMoveUp={() => moveQuestion(idx, -1)}
+                        onMoveDown={() => moveQuestion(idx, 1)}
+                      />
+                    </div>
                   ))
                 )}
               </div>
             </div>
 
             {/* Right Sidebar - Properties */}
-            <PropertyPanel 
-              selectedQuestion={selectedQuestion} 
-              updateQuestion={updateQuestion}
-              onClose={() => setSelectedId(null)}
-            />
+            {selectedId ? (
+              <PropertyPanel 
+                selectedQuestion={selectedQuestion} 
+                updateQuestion={updateQuestion}
+                onClose={() => setSelectedId(null)}
+              />
+            ) : (
+              <div className="w-80 bg-white border-l shadow-sm flex flex-col h-full shrink-0 justify-center items-center p-8 text-center border-dashed">
+                <Settings2 className="w-12 h-12 text-gray-200 mb-4" />
+                <h3 className="text-lg font-medium text-gray-400 mb-2">属性配置面板</h3>
+                <p className="text-sm text-gray-400 leading-relaxed">
+                  请在中间画布中选中一个组件以配置其详细属性
+                </p>
+              </div>
+            )}
           </>
         )}
 
@@ -300,6 +496,7 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
                     key={q.id}
                     question={q}
                     index={null} // 禁用组件自带的全局自动编号
+                    displayNumber={questionNumbers[q.id] || ''}
                     isEditMode={false}
                     userRole={user?.role}
                     currentUserId={user?.username}

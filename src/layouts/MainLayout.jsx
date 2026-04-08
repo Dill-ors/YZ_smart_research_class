@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { 
-  LayoutDashboard, 
-  FileText, 
-  Users, 
-  Settings, 
-  LogOut, 
-  Menu, 
+import {
+  LayoutDashboard,
+  FileText,
+  Users,
+  Settings,
+  LogOut,
+  Menu,
   X,
   Target,
-  Database
+  Database,
+  Calendar
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -25,9 +26,10 @@ const MainLayout = () => {
   };
 
   const menuItems = [
-    { name: '数据看板', path: '/', icon: LayoutDashboard, roles: ['admin', 'district_director', 'district_researcher', 'principal', 'teacher'] },
-    { name: '听课记录', path: '/observations', icon: FileText, roles: ['admin', 'district_director', 'district_researcher', 'principal', 'teacher'] },
-    { name: '集中调研', path: '/reports', icon: FileText, roles: ['admin', 'district_director', 'district_researcher', 'principal', 'teacher'] },
+    { name: '数据看板', path: '/', icon: LayoutDashboard, roles: ['admin', 'district_director', 'principal', 'teacher'] },
+    { name: '听课记录', path: '/observations', icon: FileText, roles: ['admin', 'district_director', 'principal', 'teacher'] },
+    { name: '日程安排', path: '/schedules', icon: Calendar, roles: ['admin', 'district_director', 'principal', 'teacher'] },
+    { name: '集中调研', path: '/reports', icon: FileText, roles: ['admin', 'district_director', 'principal', 'teacher'] },
     { name: '目标管理', path: '/targets', icon: Target, roles: ['admin', 'district_director', 'principal'] },
     { name: '用户管理', path: '/users', icon: Users, roles: ['admin', 'district_director'] },
     { name: '基础信息', path: '/basic-info', icon: Database, roles: ['admin', 'district_director'] },
