@@ -21,7 +21,7 @@ RUN apk add --no-cache nodejs npm sqlite
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # 复制前端构建出的静态资源到 Nginx 目录
-COPY --from=build-frontend /app/dist /usr/share/nginx/html/smart_reserch
+COPY --from=build-frontend /app/dist /usr/share/nginx/html/smart_research
 
 # 设置后端工作目录
 WORKDIR /app/server
