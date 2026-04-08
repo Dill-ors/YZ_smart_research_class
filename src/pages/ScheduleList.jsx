@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Search, Eye, Edit, Trash2, Filter, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import DataService from '../services/dataService';
 import { useAuth } from '../context/AuthContext';
-import { hasPermission } from '../utils/rbac';
+import { hasPermission, isTeacher, ROLES } from '../utils/rbac';
 
 const ScheduleList = () => {
   const { user } = useAuth();
@@ -48,7 +48,11 @@ const ScheduleList = () => {
   };
 
   const handleEdit = (id) => {
-    navigate(`/observations/edit/${id}?from=schedule`);
+    // 根据用户角色决定跳转模式
+    // 非教师角色（管理员、区教研主任、校长）只能编辑基本信息
+    // 教师角色可以编辑完整听课记录
+    const mode = isTeacher(user) ? 'full' : 'basic';
+    navigate(`/observations/edit/${id}?from=schedule&mode=${mode}`);
   };
 
   const handleFill = (id) => {
@@ -56,16 +60,17 @@ const ScheduleList = () => {
   };
 
   const handleTeacherAction = (id, status) => {
+    // 教师总是使用 full 模式
     if (status === 'scheduled' || status === 'expired') {
-      // 状态为已安排或已过期，跳转到填写页面（fill模式）
-      navigate(`/observations/fill/${id}?from=schedule`);
+      // 状态为已安排或已过期，跳转到编辑页面（edit模式）以便教师可以填写
+      navigate(`/observations/edit/${id}?from=schedule&mode=full`);
     } else if (status === 'completed') {
-      // 状态为已完成，跳转到编辑页面（edit模式）
-      navigate(`/observations/edit/${id}?from=schedule`);
+      // 状态为已完成，跳转到查看页面（fill模式）
+      navigate(`/observations/fill/${id}?from=schedule&mode=full`);
     } else {
-      // 未知状态，默认跳转到填写页面
-      console.warn(`Unknown schedule status: ${status}, defaulting to fill mode`);
-      navigate(`/observations/fill/${id}?from=schedule`);
+      // 未知状态，默认跳转到编辑页面
+      console.warn(`Unknown schedule status: ${status}, defaulting to edit mode`);
+      navigate(`/observations/edit/${id}?from=schedule&mode=full`);
     }
   };
 
@@ -103,7 +108,7 @@ const ScheduleList = () => {
             <div className="flex space-x-3">
           {hasPermission(user, 'canManageSchedules') && (
             <Link
-              to="/observations/new?status=scheduled"
+              to={`/observations/new?from=schedule&mode=basic&status=scheduled`}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
             >
               <Plus className="h-5 w-5 mr-2" />
@@ -238,7 +243,7 @@ const ScheduleList = () => {
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {schedule.period}
+                  {schedule.period ? schedule.period.replace(/第|节/g, '') : ''}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   {/* 查看按钮 - 所有用户 */}

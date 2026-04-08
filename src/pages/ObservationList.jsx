@@ -334,9 +334,10 @@ const ObservationList = () => {
                       <Edit className="h-5 w-5" />
                     </button>
                   )}
-                  {(hasPermission(user, 'canDelete') || survey.observer === user?.name || survey.researcherName === user?.name) && (
-                    <button 
-                      onClick={() => handleDelete(survey.id)} 
+                  {/* 删除按钮 - 只有有删除权限的用户可见 */}
+                  {hasPermission(user, 'canDelete') && (
+                    <button
+                      onClick={() => handleDelete(survey.id)}
                       className="text-red-600 hover:text-red-900"
                       title="删除"
                     >

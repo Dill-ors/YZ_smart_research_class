@@ -4,6 +4,7 @@ import { Save, Plus, Trash2, Upload, Download } from 'lucide-react';
 import DataService from '../services/dataService';
 import { uploadToOSS } from '../services/ossService';
 import SurveyEngine from '../components/SurveyEngine';
+import { isTeacher, canEditScheduleBasic, ROLES } from '../utils/rbac';
 
 const UploadButton = ({ onUploadSuccess }) => {
   const [uploading, setUploading] = useState(false);
@@ -62,6 +63,56 @@ const ObservationForm = ({ mode = 'edit' }) => {
   const displayMode = isBoardMode ? 'board' : mode;
   const initialStatus = queryParams.get('status') || 'completed';
   const fromSchedule = queryParams.get('from') === 'schedule';
+  const scheduleMode = queryParams.get('mode'); // 'basic' | 'full'
+
+  // 获取当前用户
+  const [currentUser, setCurrentUser] = useState(null);
+  const [formMode, setFormMode] = useState('observation-new');
+
+  useEffect(() => {
+    const userStr = localStorage.getItem('currentUser');
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      setCurrentUser(user);
+
+      // 用户加载完成后，确定表单模式
+      const isNew = !id;
+      let mode;
+
+      if (fromSchedule) {
+        // 从日程安排界面进入
+        if (isNew) {
+          // 新建日程：非教师显示基本信息，教师显示完整表单
+          mode = canEditScheduleBasic(user) ? 'schedule-basic' : 'schedule-full';
+        } else {
+          // 编辑日程
+          if (scheduleMode === 'basic' && canEditScheduleBasic(user)) {
+            mode = 'schedule-basic';
+          } else if (scheduleMode === 'full' && isTeacher(user)) {
+            mode = 'schedule-full';
+          } else {
+            // 默认根据角色
+            mode = isTeacher(user) ? 'schedule-full' : 'schedule-basic';
+          }
+        }
+      } else {
+        // 从听课记录入口
+        if (isNew) mode = 'observation-new';
+        else if (displayMode === 'fill') mode = 'observation-fill';
+        else mode = 'observation-edit';
+      }
+
+      setFormMode(mode);
+    }
+  }, [id, fromSchedule, scheduleMode, displayMode]);
+
+  // 是否是只读模式（仅查看）
+  const isReadOnly = formMode === 'observation-fill';
+  // 是否只显示基本信息（非教师编辑日程）
+  const isBasicOnly = formMode === 'schedule-basic';
+  // 是否显示完整表单（教师编辑日程或听课记录）
+  const isFullForm = ['schedule-full', 'observation-new', 'observation-edit', 'observation-fill'].includes(formMode);
+
   const [formData, setFormData] = useState({
     school: '',
     grade: '',
@@ -72,7 +123,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
     survey_mode: '集中调研', // Default to group survey
     topic: '',
     lesson_type: 'new',
-    period: '1',
+    period: '',
     processSteps: [{ step: '1', type: '情景导入', time: '', content: '' }],
     teacher_target: '',
     teacher_content: '',
@@ -111,13 +162,15 @@ const ObservationForm = ({ mode = 'edit' }) => {
         }
       });
     }
-  }, [id, navigate, fromSchedule]);
+  }, [id, navigate, fromSchedule, formMode]);
 
   const [availableGrades, setAvailableGrades] = useState([]);
   const [availableSubjects, setAvailableSubjects] = useState([]);
-  
+
   const [recordMode, setRecordMode] = useState('simple');
   const [schools, setSchools] = useState([]);
+  // 教师列表（用于听课人选择）
+  const [teachers, setTeachers] = useState([]);
 
   useEffect(() => {
     const loadSchools = async () => {
@@ -127,6 +180,17 @@ const ObservationForm = ({ mode = 'edit' }) => {
       }
     };
     loadSchools();
+  }, []);
+
+  // 加载教师列表
+  useEffect(() => {
+    const loadTeachers = async () => {
+      if (DataService.getTeachers) {
+        const teachersData = await DataService.getTeachers();
+        setTeachers(teachersData);
+      }
+    };
+    loadTeachers();
   }, []);
 
   // Set available subjects and grades based on selected school
@@ -151,28 +215,60 @@ const ObservationForm = ({ mode = 'edit' }) => {
   // Handle Cascading Resets
   const handleChange = (e) => {
     const { name, value } = e.target;
-    
+
     setFormData(prev => {
       const newData = { ...prev, [name]: value };
-      
+
       // Handle Cascading Resets
       if (name === 'school') {
         newData.grade = '';
         newData.class = '';
         newData.subject = '';
-        // Teacher is now manual, so we don't strictly need to reset it, 
-        // but it might be good practice to reset if the school changes.
-        // However, if it's a manual text input, maybe we just leave it or clear it.
-        // Let's clear it to be safe.
         newData.teacher = '';
       } else if (name === 'grade') {
         newData.class = '';
-        newData.subject = ''; 
-      } 
-      // Class and Subject changes no longer affect teacher (no auto-match)
-      
+        newData.subject = '';
+      }
+
       return newData;
     });
+  };
+
+  // 处理听课人变化，自动设置学科
+  const handleObserverChange = (e) => {
+    const observerName = e.target.value;
+    const selectedTeacher = teachers.find(t => t.name === observerName);
+
+    setFormData(prev => ({
+      ...prev,
+      observer: observerName,
+      // 如果选择的教师有学科，自动设置学科（但保留用户修改权限）
+      subject: selectedTeacher?.subject || prev.subject
+    }));
+  };
+
+  // 检查评价内容是否完整
+  const checkEvaluationComplete = (data, mode) => {
+    if (mode === 'simple') {
+      // 集中调研模式：检查主要优点和存在问题
+      return !!(data.highlights?.trim() && data.problems_suggestions?.trim());
+    } else if (mode === 'photo') {
+      // 快捷上传模式：检查是否有图片
+      return !!(data.images?.length > 0);
+    } else if (mode === 'standard') {
+      // 标准模式：检查主要评价字段
+      const hasProcessSteps = data.processSteps?.length > 0 &&
+        data.processSteps.some(step => step.content?.trim());
+      const hasTeacherEval = data.teacher_target?.trim() ||
+        data.teacher_content?.trim() ||
+        data.teacher_method?.trim();
+      const hasStudentEval = data.student_participation?.trim() ||
+        data.student_thinking?.trim();
+      const hasSummary = data.highlights?.trim() || data.overall_evaluation?.trim();
+
+      return hasProcessSteps && hasTeacherEval && hasStudentEval && hasSummary;
+    }
+    return false;
   };
 
   const handleStepChange = (index, field, value) => {
@@ -252,10 +348,6 @@ const ObservationForm = ({ mode = 'edit' }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Get current user from context/localStorage
-    const userStr = localStorage.getItem('currentUser');
-    const currentUser = userStr ? JSON.parse(userStr) : null;
-
     if (!currentUser) {
       alert('用户未登录');
       return;
@@ -264,12 +356,24 @@ const ObservationForm = ({ mode = 'edit' }) => {
     const finalData = { ...formData, recordMode };
 
     // For teachers, auto-set observer to their name
-    if (currentUser.role === 'teacher') {
+    // 教师填写听课记录时，听课人固定为教师本人
+    if (isTeacher(currentUser)) {
       finalData.observer = currentUser.name;
     }
 
-    // If filling a scheduled observation, mark it as completed
-    if (id && finalData.status === 'scheduled') {
+    // 自动状态更新逻辑：
+    // 1. 如果是从日程安排界面编辑（schedule-basic 或 schedule-full）
+    // 2. 如果是教师填写完整内容（schedule-full 模式）
+    // 3. 检查评价内容是否完整
+    if (formMode === 'schedule-full' && isTeacher(currentUser)) {
+      const isComplete = checkEvaluationComplete(finalData, recordMode);
+      if (isComplete) {
+        finalData.status = 'completed';
+      }
+    }
+
+    // If filling a scheduled observation from observation list, mark it as completed
+    if (id && finalData.status === 'scheduled' && formMode.startsWith('observation-')) {
       finalData.status = 'completed';
     }
 
@@ -304,13 +408,16 @@ const ObservationForm = ({ mode = 'edit' }) => {
         <div className="flex justify-between items-center">
           <div>
             <h3 className="text-lg leading-6 font-medium text-gray-900">
-              {mode === 'fill' ? '查看听课记录' : mode === 'edit' ? '编辑听课记录' : '新建听课记录'}
+              {isReadOnly ? '查看听课记录' :
+               formMode === 'schedule-basic' ? '编辑日程安排（基本信息）' :
+               formMode === 'schedule-full' ? '编辑日程安排（完整记录）' :
+               mode === 'edit' ? '编辑听课记录' : '新建听课记录'}
             </h3>
             <p className="mt-1 max-w-2xl text-sm text-gray-500 print:hidden">
               请填写完整的课堂观察信息。
             </p>
           </div>
-          {mode !== 'fill' && (
+          {!isReadOnly && formMode !== 'schedule-basic' && (
             <div className="flex bg-gray-100 p-1 rounded-lg print:hidden">
               <button
                 type="button"
@@ -366,19 +473,19 @@ const ObservationForm = ({ mode = 'edit' }) => {
               <label className="block text-sm font-medium text-gray-700 mb-2">调研方式</label>
               <div className="flex gap-4">
                 <label className="inline-flex items-center">
-                  <input type="radio" name="survey_mode" value="集中调研" checked={formData.survey_mode === '集中调研'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={mode === 'fill'} />
+                  <input type="radio" name="survey_mode" value="集中调研" checked={formData.survey_mode === '集中调研'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={isReadOnly} />
                   <span className="ml-2 text-gray-700">集中调研</span>
                 </label>
                 <label className="inline-flex items-center">
-                  <input type="radio" name="survey_mode" value="个别调研" checked={formData.survey_mode === '个别调研'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={mode === 'fill'} />
+                  <input type="radio" name="survey_mode" value="个别调研" checked={formData.survey_mode === '个别调研'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={isReadOnly} />
                   <span className="ml-2 text-gray-700">个别调研</span>
                 </label>
                 <label className="inline-flex items-center">
-                  <input type="radio" name="survey_mode" value="集备调研" checked={formData.survey_mode === '集备调研'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={mode === 'fill'} />
+                  <input type="radio" name="survey_mode" value="集备调研" checked={formData.survey_mode === '集备调研'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={isReadOnly} />
                   <span className="ml-2 text-gray-700">集备调研</span>
                 </label>
                 <label className="inline-flex items-center">
-                  <input type="radio" name="survey_mode" value="其它" checked={formData.survey_mode === '其它'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={mode === 'fill'} />
+                  <input type="radio" name="survey_mode" value="其它" checked={formData.survey_mode === '其它'} onChange={handleChange} className="text-blue-600 focus:ring-blue-500" disabled={isReadOnly} />
                   <span className="ml-2 text-gray-700">其它</span>
                 </label>
               </div>
@@ -391,7 +498,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 onChange={handleChange}
                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
                 required
-                disabled={mode === 'fill'}
+                disabled={isReadOnly}
               >
                 <option value="">请选择学校</option>
                 {schools.map(s => <option key={s} value={s}>{s}</option>)}
@@ -405,7 +512,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 onChange={handleChange}
                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
                 required
-                disabled={!formData.school || mode === 'fill'}
+                disabled={!formData.school || isReadOnly}
               >
                 <option value="">请选择年级</option>
                 {availableGrades.map(g => <option key={g} value={g}>{g}</option>)}
@@ -421,9 +528,39 @@ const ObservationForm = ({ mode = 'edit' }) => {
               placeholder="请输入班级(如: 1班)"
               className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
               required
-              disabled={!formData.grade || mode === 'fill'}
+              disabled={!formData.grade || isReadOnly}
             />
           </div>
+            {/* 听课人选择 - 提前到学科之前 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">听课人</label>
+              {isTeacher(currentUser) && (formMode.startsWith('observation-') || formMode === 'schedule-full') ? (
+                /* 教师填写听课记录时，听课人固定为本人 */
+                <input
+                  type="text"
+                  name="observer"
+                  value={currentUser?.name || ''}
+                  readOnly
+                  className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2 bg-gray-50"
+                />
+              ) : (
+                /* 其他情况使用下拉选择 */
+                <select
+                  name="observer"
+                  value={formData.observer || ''}
+                  onChange={handleObserverChange}
+                  className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
+                  disabled={isReadOnly}
+                >
+                  <option value="">请选择听课人</option>
+                  {teachers.map(t => (
+                    <option key={t.id} value={t.name}>
+                      {t.name} {t.subject ? `(${t.subject})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">学科</label>
               <select
@@ -432,7 +569,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 onChange={handleChange}
                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
                 required
-                disabled={!formData.class || mode === 'fill'}
+                disabled={isReadOnly}
               >
                 <option value="">请选择学科</option>
                 {availableSubjects.map(s => <option key={s} value={s}>{s}</option>)}
@@ -448,7 +585,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 placeholder="请输入教师姓名"
                 className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                 required
-                disabled={!formData.subject || mode === 'fill'}
+                disabled={isReadOnly}
               />
             </div>
             <div>
@@ -460,8 +597,29 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 onChange={handleChange}
                 className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                 required
-                disabled={mode === 'fill'}
+                disabled={isReadOnly}
               />
+            </div>
+            {/* 时段选择 - 改为第几节课，手动选择 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">时段</label>
+              <select
+                name="period"
+                value={formData.period || ''}
+                onChange={handleChange}
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
+                disabled={isReadOnly}
+              >
+                <option value="">请选择时段</option>
+                <option value="第1节">第1节</option>
+                <option value="第2节">第2节</option>
+                <option value="第3节">第3节</option>
+                <option value="第4节">第4节</option>
+                <option value="第5节">第5节</option>
+                <option value="第6节">第6节</option>
+                <option value="第7节">第7节</option>
+                <option value="第8节">第8节</option>
+              </select>
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700">课题名称</label>
@@ -472,7 +630,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 onChange={handleChange}
                 className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                 required
-                disabled={mode === 'fill'}
+                disabled={isReadOnly}
               />
             </div>
             <div>
@@ -482,7 +640,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 value={formData.lesson_type}
                 onChange={handleChange}
                 className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
-                disabled={mode === 'fill'}
+                disabled={isReadOnly}
               >
                 <option value="new">新授课</option>
                 <option value="review">复习课</option>
@@ -494,8 +652,8 @@ const ObservationForm = ({ mode = 'edit' }) => {
           </div>
         </section>
 
-        {/* Quick Photo Mode View */}
-        {recordMode === 'photo' && (
+        {/* Quick Photo Mode View - 在 schedule-basic 模式下不显示 */}
+        {recordMode === 'photo' && formMode !== 'schedule-basic' && (
           <section className="bg-gray-50 p-6 rounded-lg border-2 border-dashed border-gray-300">
             <div className="text-center">
               <Upload className="mx-auto h-12 w-12 text-gray-400" />
@@ -545,14 +703,14 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   onChange={handleChange}
                   placeholder="可在此添加对图片的文字补充说明..."
                   className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                  disabled={mode === 'fill'}
+                  disabled={isReadOnly}
                 />
             </div>
           </section>
         )}
 
-        {/* Custom Mode View */}
-        {recordMode === 'custom' && (
+        {/* Custom Mode View - 在 schedule-basic 模式下不显示 */}
+        {recordMode === 'custom' && formMode !== 'schedule-basic' && (
           <section className="bg-white rounded-lg">
              <SurveyEngine 
                 initialData={{ ...(formData.customSurveyData || { title: '自定义听课记录', questions: [] }), customAnswers: formData.customAnswers }} 
@@ -592,13 +750,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                         alert(`保存失败: ${error.message}`);
                     }
                 }}
-                onCancel={() => navigate('/observations')} 
+                onCancel={() => navigate(fromSchedule ? '/schedules' : '/observations')} 
               />
           </section>
         )}
 
         {/* Simple Mode View */}
-        {recordMode === 'simple' && (
+        {recordMode === 'simple' && formMode !== 'schedule-basic' && (
           <>
             <section>
               <h4 className="text-md font-medium text-gray-900 mb-4 border-l-4 border-blue-500 pl-2">2. 评价与总结</h4>
@@ -606,7 +764,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="block text-sm font-medium text-gray-700">（1）主要优点：</label>
-                    {mode !== 'fill' && (
+                    {!isReadOnly && (
                       <div className="flex gap-2">
                         <UploadButton onUploadSuccess={handleUploadSuccess('highlights')} />
                       </div>
@@ -618,13 +776,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     value={formData.highlights}
                     onChange={handleChange}
                     className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                    disabled={mode === 'fill'}
+                    disabled={isReadOnly}
                   />
                 </div>
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="block text-sm font-medium text-gray-700">（2）存在问题：</label>
-                    {mode !== 'fill' && (
+                    {!isReadOnly && (
                       <div className="flex gap-2">
                         <UploadButton onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
                       </div>
@@ -636,18 +794,18 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     value={formData.problems_suggestions}
                     onChange={handleChange}
                     className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                    disabled={mode === 'fill'}
+                    disabled={isReadOnly}
                   />
                 </div>
               </div>
             </section>
-            
+
             <section>
               <h4 className="text-md font-medium text-gray-900 mb-4 border-l-4 border-blue-500 pl-2">3. 给学校的意见建议</h4>
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-sm font-medium text-gray-700">给学校的意见建议：</label>
-                  {mode !== 'fill' && (
+                  {!isReadOnly && (
                     <div className="flex gap-2">
                       <UploadButton onUploadSuccess={handleUploadSuccess('school_suggestions')} />
                     </div>
@@ -659,21 +817,21 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   value={formData.school_suggestions}
                   onChange={handleChange}
                   className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                  disabled={mode === 'fill'}
+                  disabled={isReadOnly}
                 />
               </div>
             </section>
           </>
         )}
 
-        {/* Standard Mode View */}
-        {recordMode === 'standard' && (
+        {/* Standard Mode View - 在 schedule-basic 模式下不显示 */}
+        {recordMode === 'standard' && formMode !== 'schedule-basic' && (
           <>
             {/* 2. Teaching Process */}
             <section>
           <div className="flex justify-between items-center mb-4 border-l-4 border-blue-500 pl-2">
             <h4 className="text-md font-medium text-gray-900">2. 教学过程实录与观察</h4>
-            {mode !== 'fill' && (
+            {!isReadOnly && formMode !== 'schedule-basic' && (
               <button
                 type="button"
                 onClick={addStep}
@@ -694,7 +852,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     value={step.type}
                     onChange={(e) => handleStepChange(index, 'type', e.target.value)}
                     className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                    disabled={mode === 'fill'}
+                    disabled={isReadOnly}
                   >
                     <option value="情景导入">情景导入</option>
                     <option value="新知探究">新知探究</option>
@@ -708,7 +866,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     value={step.time}
                     onChange={(e) => handleStepChange(index, 'time', e.target.value)}
                     className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                    disabled={mode === 'fill'}
+                    disabled={isReadOnly}
                   />
                 </div>
 
@@ -719,12 +877,12 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     value={step.content}
                     onChange={(e) => handleStepChange(index, 'content', e.target.value)}
                     className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2 h-full"
-                    disabled={mode === 'fill'}
+                    disabled={isReadOnly}
                   />
                 </div>
                 
                 <div className="flex flex-col gap-2 pt-0">
-                  {mode !== 'fill' && (
+                  {!isReadOnly && formMode !== 'schedule-basic' && (
                     <button
                       type="button"
                       onClick={() => removeStep(index)}
@@ -734,7 +892,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                       <Trash2 className="h-5 w-5 mx-auto" />
                     </button>
                   )}
-                  {mode !== 'fill' && <UploadButton onUploadSuccess={handleUploadSuccess(`processSteps[${index}].content`)} />}
+                  {!isReadOnly && formMode !== 'schedule-basic' && <UploadButton onUploadSuccess={handleUploadSuccess(`processSteps[${index}].content`)} />}
                 </div>
               </div>
             ))}
@@ -770,7 +928,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                         value={formData[item.key]}
                         onChange={handleChange}
                         className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                        disabled={mode === 'fill'}
+                        disabled={isReadOnly}
                       />
                     </div>
                   ))}
@@ -779,7 +937,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <h5 className="text-sm font-medium text-gray-900">B. 学生学习状态观察</h5>
-                  {mode !== 'fill' && (
+                  {!isReadOnly && formMode !== 'schedule-basic' && (
                     <div className="flex gap-2">
                       <UploadButton onUploadSuccess={handleUploadSuccess('student_observation_all')} />
                     </div>
@@ -801,7 +959,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                         value={formData[item.key]}
                         onChange={handleChange}
                         className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                        disabled={mode === 'fill'}
+                        disabled={isReadOnly}
                       />
                     </div>
                   ))}
@@ -810,14 +968,15 @@ const ObservationForm = ({ mode = 'edit' }) => {
           </div>
         </section>
 
-        {/* 4. Evaluation */}
+        {/* 4. Evaluation - 在 schedule-basic 模式下不显示 */}
+        {formMode !== 'schedule-basic' && (
           <section>
             <h4 className="text-md font-medium text-gray-900 mb-4 border-l-4 border-blue-500 pl-2">4. 评价与总结</h4>
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-sm font-medium text-gray-700">课堂特色与亮点</label>
-                  {mode !== 'fill' && (
+                  {!isReadOnly && (
                     <div className="flex gap-2">
                       <UploadButton onUploadSuccess={handleUploadSuccess('highlights')} />
                     </div>
@@ -829,13 +988,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   value={formData.highlights}
                   onChange={handleChange}
                   className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                  disabled={mode === 'fill'}
+                  disabled={isReadOnly}
                 />
               </div>
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-sm font-medium text-gray-700">问题与改进建议</label>
-                  {mode !== 'fill' && (
+                  {!isReadOnly && (
                     <div className="flex gap-2">
                       <UploadButton onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
                     </div>
@@ -847,13 +1006,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   value={formData.problems_suggestions}
                   onChange={handleChange}
                   className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                  disabled={mode === 'fill'}
+                  disabled={isReadOnly}
                 />
               </div>
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-sm font-medium text-gray-700">总体评价</label>
-                  {mode !== 'fill' && (
+                  {!isReadOnly && (
                     <div className="flex gap-2">
                       <UploadButton onUploadSuccess={handleUploadSuccess('overall_evaluation')} />
                     </div>
@@ -865,11 +1024,12 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   value={formData.overall_evaluation}
                   onChange={handleChange}
                   className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
-                  disabled={mode === 'fill'}
+                  disabled={isReadOnly}
                 />
               </div>
             </div>
           </section>
+        )}
           </>
         )}
 
@@ -877,10 +1037,10 @@ const ObservationForm = ({ mode = 'edit' }) => {
             <div className="flex justify-end">
               <button
                 type="button"
-                onClick={() => navigate('/observations')}
+                onClick={() => navigate(fromSchedule ? '/schedules' : '/observations')}
                 className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
-                {mode === 'fill' ? '返回' : '取消'}
+                {isReadOnly || formMode === 'schedule-basic' ? '返回' : '取消'}
               </button>
               {mode === 'fill' && (
                 <button
@@ -892,13 +1052,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   导出PDF
                 </button>
               )}
-              {mode !== 'fill' && recordMode !== 'custom' && (
+              {!isReadOnly && recordMode !== 'custom' && (
                 <button
                   type="submit"
                   className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   <Save className="h-5 w-5 mr-2" />
-                  保存记录
+                  {formMode === 'schedule-basic' ? '保存日程' : '保存记录'}
                 </button>
               )}
             </div>

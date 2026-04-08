@@ -62,8 +62,8 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
   const [showComponentLibrary, setShowComponentLibrary] = useState(true);
   const [showOutline, setShowOutline] = useState(true);
   
-  // Auto numbering state
-  const [autoNumbering, setAutoNumbering] = useState(true);
+  // Auto numbering state - 从 initialData 恢复，默认为 true
+  const [autoNumbering, setAutoNumbering] = useState(initialData?.autoNumbering !== false);
   
   // Extract outline from questions with auto numbering
   const { outline, questionNumbers } = useMemo(() => {
@@ -216,7 +216,7 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
     if (mode === 'fill' && onSubmit) {
       onSubmit(answers);
     } else if (onSave) {
-      onSave({ ...(initialData || {}), title, description, questions });
+      onSave({ ...(initialData || {}), title, description, questions, autoNumbering });
     }
   };
 
@@ -267,7 +267,7 @@ export default function SurveyEngine({ initialData, onSave, onSubmit, onCancel, 
   const handleExport = async () => {
     try {
       await exportReport(
-        { title, description, pages },
+        { title, description, pages, autoNumbering },
         latestResponses,
         targetUsers || [],
         'word'

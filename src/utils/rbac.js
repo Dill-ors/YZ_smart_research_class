@@ -78,3 +78,56 @@ export const hasPermission = (user, permission) => {
   const rolePerms = ROLE_PERMISSIONS[user.role];
   return rolePerms ? !!rolePerms[permission] : false;
 };
+
+/**
+ * 判断用户是否为教师角色
+ */
+export const isTeacher = (user) => {
+  return user?.role === ROLES.TEACHER;
+};
+
+/**
+ * 判断用户是否可以编辑日程基本信息
+ * 非教师角色（管理员、区教研主任、校长）可以编辑基本信息
+ */
+export const canEditScheduleBasic = (user) => {
+  if (!user || !user.role) return false;
+  return [ROLES.ADMIN, ROLES.DISTRICT_DIRECTOR, ROLES.PRINCIPAL].includes(user.role);
+};
+
+/**
+ * 判断用户是否可以编辑日程的评价内容
+ * 只有教师角色可以编辑评价（填写听课记录）
+ */
+export const canEditScheduleEvaluation = (user, schedule) => {
+  if (!user || !user.role) return false;
+  // 教师只能编辑自己作为听课人的记录
+  if (user.role === ROLES.TEACHER) {
+    return schedule?.observer === user.name;
+  }
+  return false;
+};
+
+/**
+ * 判断用户是否可以删除日程/听课记录
+ */
+export const canDeleteSchedule = (user, schedule) => {
+  if (!user || !user.role || !schedule) return false;
+
+  // 有管理权限的角色可以删除
+  if (hasPermission(user, 'canManageSchedules')) {
+    return true;
+  }
+
+  // 教师可以删除自己创建的记录
+  if (user.role === ROLES.TEACHER && schedule.createdBy === user.id) {
+    return true;
+  }
+
+  // 教师可以删除自己作为听课人的记录（向后兼容）
+  if (user.role === ROLES.TEACHER && schedule.observer === user.name) {
+    return true;
+  }
+
+  return false;
+};

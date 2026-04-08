@@ -279,12 +279,24 @@ const DataService = {
             });
         }
 
+      // 处理 period 字段：将默认值 '1' 或 '第1节' 转换为空字符串
+      surveys.forEach(s => {
+        if (s.period === '1' || s.period === '第1节' || s.period === 1) {
+          s.period = '';
+        }
+      });
+
       return surveys.sort((a, b) => new Date(b.date) - new Date(a.date));
   },
 
   async getSurveyById(id) {
       const surveys = await this._getAllSurveysRaw();
-      return surveys.find(s => s.id === id);
+      const survey = surveys.find(s => s.id === id);
+      // 处理 period 字段：将默认值 '1' 或 '第1节' 转换为空字符串
+      if (survey && (survey.period === '1' || survey.period === '第1节' || survey.period === 1)) {
+        survey.period = '';
+      }
+      return survey;
   },
 
   async addSurvey(surveyData, currentUser = null) {
@@ -309,6 +321,8 @@ const DataService = {
           id: surveyData.id || Date.now().toString(),
           createdAt: surveyData.createdAt || new Date().toISOString(),
           status: surveyData.status || 'completed',
+          // 记录创建者，用于教师删除权限判断
+          createdBy: currentUser.id || currentUser.username,
           ...surveyData
       };
       await fetch(`${getApiBase()}/surveys`, {
@@ -317,6 +331,33 @@ const DataService = {
           body: JSON.stringify(newSurvey)
       });
       return newSurvey;
+  },
+
+  /**
+   * 根据上课时间计算时段
+   * @param {string} timeString - 时间字符串，格式 "HH:MM"
+   * @returns {string} 时段描述
+   */
+  calculatePeriod(timeString) {
+    if (!timeString) return '';
+
+    const [hours, minutes] = timeString.split(':').map(Number);
+    const timeValue = hours * 60 + minutes;
+
+    // 定义时段规则（根据实际学校作息时间调整）
+    const periods = [
+      { start: 480, end: 525, name: '第1节' },   // 08:00-08:45
+      { start: 535, end: 580, name: '第2节' },   // 08:55-09:40
+      { start: 600, end: 645, name: '第3节' },   // 10:00-10:45
+      { start: 655, end: 700, name: '第4节' },   // 10:55-11:40
+      { start: 810, end: 855, name: '第5节' },   // 13:30-14:15
+      { start: 865, end: 910, name: '第6节' },   // 14:25-15:10
+      { start: 920, end: 965, name: '第7节' },   // 15:20-16:05
+      { start: 975, end: 1020, name: '第8节' },  // 16:15-17:00
+    ];
+
+    const period = periods.find(p => timeValue >= p.start && timeValue <= p.end);
+    return period ? period.name : '';
   },
 
   async updateSurvey(id, updateData, currentUser = null) {
@@ -1045,6 +1086,15 @@ const DataService = {
       const dateB = new Date(b.date || 0);
       return dateB - dateA;
     });
+
+    // 处理 period 字段：将默认值 '1' 或 '第1节' 转换为空字符串
+    filteredByDate.forEach(s => {
+      if (s.period === '1' || s.period === '第1节' || s.period === 1) {
+        s.period = '';
+      }
+    });
+
+    return filteredByDate;
   }
 };
 

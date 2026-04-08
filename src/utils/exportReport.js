@@ -17,7 +17,7 @@ const toChineseNumber = (num) => {
 };
 
 export const exportReport = async (surveyData, responses = [], targetUsers = [], format = 'word') => {
-  const { title, description, pages } = surveyData || {};
+  const { title, description, pages, autoNumbering = true } = surveyData || {};
   const questions = pages ? pages.flat() : [];
   const latestResponses = responses;
 
@@ -33,17 +33,17 @@ export const exportReport = async (surveyData, responses = [], targetUsers = [],
     const normalQuestions = questions.filter(q => q.type !== 'lesson_record' && q.type !== 'pagination');
     if (normalQuestions.length > 0) {
       htmlContent += `<div style="margin-bottom: 40px;">`;
-      
-      // 编号状态跟踪
+
+      // 编号状态跟踪 - 只在 autoNumbering 为 true 时启用
       const numbering = { h2: 0, h3: 0, h4: 0 };
-      
+
       normalQuestions.forEach((q) => {
         // 获取组件的 level
         const level = q.level || (q.type === 'title' ? (q.titleLevel || 'h1') : 'none');
-        
-        // 计算显示编号
+
+        // 计算显示编号 - 只在 autoNumbering 为 true 时生成编号
         let displayNumber = '';
-        if (level !== 'none') {
+        if (autoNumbering && level !== 'none') {
           if (level === 'h2') {
             numbering.h2++;
             numbering.h3 = 0;
