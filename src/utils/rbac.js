@@ -22,9 +22,9 @@ export const ROLES = {
 //    - 可以填写听课记录
 //
 // 2. 区教研主任 (district_director):
-//    - 只能查看和管理所辖区域的学校数据
-//    - 可以删除、修改、发布权限范围内的数据
-//    - 可以管理所辖区域的日程安排
+//    - 可以查看和管理所有学校的日程安排和听课记录（与管理员一致）
+//    - 可以删除、修改、发布任何数据
+//    - 可以管理所有日程安排
 //    - 可以填写听课记录
 //
 // 3. 校长 (principal):
@@ -51,7 +51,7 @@ const ROLE_PERMISSIONS = {
     canDelete: true,
     canModifyStructure: true,
     canPublish: true,
-    canViewAll: false, // 只能查看所辖区域的数据
+    canViewAll: true, // 可以查看所有数据（与管理员一致）
     canFill: true,
     canManageSchedules: true,
   },

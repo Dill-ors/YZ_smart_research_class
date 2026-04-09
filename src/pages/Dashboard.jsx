@@ -254,7 +254,7 @@ const Dashboard = () => {
             </span>
             {canManageSchedules() && (
               <Link
-                to="/observations/new?status=scheduled"
+                to="/observations/new?from=schedule&mode=basic&status=scheduled"
                 className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
               >
                 + 新建日程安排

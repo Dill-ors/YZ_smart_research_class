@@ -932,24 +932,9 @@ const DataService = {
       return true;
     }
 
-    // 区教研主任可以管理所辖区域的学校
+    // 区教研主任可以管理所有学校（与管理员一致）
     if (role === 'district_director') {
-      if (!user.region) {
-        // 没有区域信息，默认不允许
-        return false;
-      }
-
-      // 获取所有学校数据
-      const allSchools = await this.getSchools();
-      const userRegion = user.region.trim();
-
-      // 检查学校是否在用户区域内
-      const schoolInRegion = allSchools.some(s =>
-        s.name?.trim() === school?.trim() &&
-        s.region?.trim() === userRegion
-      );
-
-      return schoolInRegion;
+      return true;
     }
 
     // 校长只能管理自己学校
@@ -984,34 +969,9 @@ const DataService = {
     if (userRole === 'admin') {
       filteredSurveys = allSurveys.filter(s => s.status === 'scheduled' || s.status === 'completed');
     }
-    // 区教研主任角色：如果有region字段，按区域过滤；否则看到所有日程
+    // 区教研主任角色：看到所有日程（与管理员一致）
     else if (userRole === 'district_director') {
-      // 只显示scheduled状态的记录
-      const scheduledSurveys = allSurveys.filter(s => s.status === 'scheduled');
-
-      // 如果用户有region字段，按区域过滤
-      if (currentUser.region) {
-        // 获取所有学校数据
-        const allSchools = await this.getSchools();
-        const userRegion = currentUser.region?.trim();
-
-        // 获取该区域的所有学校名称（去除空格）
-        const regionSchools = allSchools
-          .filter(school => school.region?.trim() === userRegion)
-          .map(school => school.name?.trim());
-
-        // 如果找到该区域的学校，按区域过滤；否则返回空数组
-        if (regionSchools.length > 0) {
-          filteredSurveys = scheduledSurveys.filter(s =>
-            regionSchools.includes(s.school?.trim())
-          );
-        } else {
-          filteredSurveys = [];
-        }
-      } else {
-        // 没有region字段，看到所有日程
-        filteredSurveys = scheduledSurveys;
-      }
+      filteredSurveys = allSurveys.filter(s => s.status === 'scheduled' || s.status === 'completed');
     }
     // 校长角色：只看到自己学校的日程
     else if (userRole === 'principal') {
