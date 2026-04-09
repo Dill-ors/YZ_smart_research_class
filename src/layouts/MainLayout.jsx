@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
@@ -18,7 +18,29 @@ import clsx from 'clsx';
 const MainLayout = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // 判断菜单项是否应该高亮
+  const isMenuActive = (itemPath) => {
+    const { pathname, search } = location;
+    const queryParams = new URLSearchParams(search);
+    const fromSchedule = queryParams.get('from') === 'schedule';
+
+    // 日程安排模块：/schedules 路径 或 /observations 路径且 from=schedule
+    if (itemPath === '/schedules') {
+      return pathname === '/schedules' ||
+             (pathname.startsWith('/observations') && fromSchedule);
+    }
+
+    // 听课记录模块：/observations 路径且 from≠schedule
+    if (itemPath === '/observations') {
+      return pathname.startsWith('/observations') && !fromSchedule;
+    }
+
+    // 其他菜单项按精确匹配
+    return pathname === itemPath;
+  };
 
   const handleLogout = () => {
     logout();
@@ -67,10 +89,10 @@ const MainLayout = () => {
             <NavLink
               key={item.path}
               to={item.path}
-              className={({ isActive }) =>
+              className={() =>
                 clsx(
                   "flex items-center px-4 py-3 text-gray-700 rounded-lg transition-colors",
-                  isActive ? "bg-blue-50 text-blue-700" : "hover:bg-gray-100"
+                  isMenuActive(item.path) ? "bg-blue-50 text-blue-700" : "hover:bg-gray-100"
                 )
               }
             >
