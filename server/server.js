@@ -54,6 +54,33 @@ function initDb() {
     db.run(`CREATE TABLE IF NOT EXISTS schools (id TEXT PRIMARY KEY, data TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS subjects (id TEXT PRIMARY KEY, data TEXT)`);
     db.run(`CREATE TABLE IF NOT EXISTS userGroups (id TEXT PRIMARY KEY, data TEXT)`);
+
+    // 首次部署时自动创建默认管理员账户，确保登录可用
+    db.get(`SELECT COUNT(*) as count FROM users`, [], (err, row) => {
+      if (err) {
+        console.error('Error checking users table:', err);
+        return;
+      }
+      if (row && row.count === 0) {
+        const defaultUsers = [
+          { id: 'u1', username: 'admin', password: '123', name: '系统管理员', role: 'admin' },
+          { id: 'u2', username: 'director', password: '123', name: '王主任', role: 'district_director' },
+          { id: 'u3', username: 'researcher1', password: '123', name: '李调研员', role: 'district_researcher' },
+          { id: 'u4', username: 'principal1', password: '123', name: '赵校长', role: 'principal', school: '市北四实验' },
+          { id: 'u5', username: 'teacher1', password: '123', name: '孙老师', role: 'teacher', subject: '数学', school: '市北四实验' },
+          { id: 'u6', username: 'teacher2', password: '123', name: '张老师', role: 'teacher', subject: '物理', school: '市北四实验' }
+        ];
+        const stmt = db.prepare(`INSERT INTO users (id, data) VALUES (?, ?)`);
+        defaultUsers.forEach(u => stmt.run(u.id, JSON.stringify(u)));
+        stmt.finalize((finalizeErr) => {
+          if (finalizeErr) {
+            console.error('Error initializing default users:', finalizeErr);
+          } else {
+            console.log('Default users initialized successfully.');
+          }
+        });
+      }
+    });
   });
 }
 

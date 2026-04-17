@@ -20,19 +20,29 @@ const Login = () => {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    const users = await DataService.getAllUsers();
-    const foundUser = users.find(u => u.username === username);
-
-    if (foundUser) {
-      const userPassword = foundUser.password || '123';
-      if (userPassword !== password) {
-        setError('密码不正确，请检查');
-      } else {
-        login(foundUser);
-        navigate('/');
+    setError('');
+    try {
+      const users = await DataService.getAllUsers();
+      if (!Array.isArray(users)) {
+        setError('无法获取用户数据，请检查服务器连接');
+        return;
       }
-    } else {
-      setError('用户名不存在，请检查');
+      const foundUser = users.find(u => u.username === username);
+
+      if (foundUser) {
+        const userPassword = foundUser.password || '123';
+        if (userPassword !== password) {
+          setError('密码不正确，请检查');
+        } else {
+          login(foundUser);
+          navigate('/');
+        }
+      } else {
+        setError('用户名不存在，请检查');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('登录失败，请检查网络或服务器状态');
     }
   };
 
