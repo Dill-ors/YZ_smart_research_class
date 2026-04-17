@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useId } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Save, Plus, Trash2, Upload, Download } from 'lucide-react';
+import { Save, Plus, Trash2, Upload, Download, Camera } from 'lucide-react';
 import DataService from '../services/dataService';
 import { uploadToOSS } from '../services/ossService';
-import SurveyEngine from '../components/SurveyEngine';
+import SchoolSelector from '../components/SchoolSelector';
 import { isTeacher, canEditScheduleBasic, ROLES } from '../utils/rbac';
 
 const UploadButton = ({ onUploadSuccess }) => {
@@ -54,6 +54,54 @@ const UploadButton = ({ onUploadSuccess }) => {
   );
 };
 
+const CameraButton = ({ onCaptureSuccess }) => {
+  const [capturing, setCapturing] = useState(false);
+  const id = useId();
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setCapturing(true);
+    try {
+      const result = await uploadToOSS(file);
+      onCaptureSuccess(result.url);
+    } catch (error) {
+      alert(`拍照上传失败: ${error.message}`);
+    } finally {
+      setCapturing(false);
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <div className="relative inline-block">
+      <input
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleFileChange}
+        className="hidden"
+        id={`camera-${id}`}
+      />
+      <label
+        htmlFor={`camera-${id}`}
+        className={`cursor-pointer inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${capturing ? 'opacity-50 cursor-not-allowed' : ''}`}
+        title="拍照上传"
+      >
+        {capturing ? (
+          <span>...</span>
+        ) : (
+          <>
+            <Camera className="h-4 w-4" />
+            <span className="ml-1">拍照</span>
+          </>
+        )}
+      </label>
+    </div>
+  );
+};
+
 const ObservationForm = ({ mode = 'edit' }) => {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -82,13 +130,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
       if (fromSchedule) {
         // 从日程安排界面进入
         if (isNew) {
-          // 新建日程：非教师显示基本信息，教师显示完整表单
-          mode = canEditScheduleBasic(user) ? 'schedule-basic' : 'schedule-full';
+          // 新建日程：所有人都只显示课堂基本情况
+          mode = 'schedule-basic';
         } else {
           // 编辑日程
-          if (scheduleMode === 'basic' && canEditScheduleBasic(user)) {
+          if (scheduleMode === 'basic') {
             mode = 'schedule-basic';
-          } else if (scheduleMode === 'full' && isTeacher(user)) {
+          } else if (scheduleMode === 'full') {
             mode = 'schedule-full';
           } else {
             // 默认根据角色
@@ -103,6 +151,11 @@ const ObservationForm = ({ mode = 'edit' }) => {
       }
 
       setFormMode(mode);
+
+      // 新建模式下，教师/教研员自动将听课人固定为自己
+      if (!id && isTeacher(user)) {
+        setFormData(prev => ({ ...prev, observer: user.name }));
+      }
     }
   }, [id, fromSchedule, scheduleMode, displayMode]);
 
@@ -137,9 +190,8 @@ const ObservationForm = ({ mode = 'edit' }) => {
     problems_suggestions: '',
     school_suggestions: '',
     overall_evaluation: '',
-    recordMode: 'simple', // 'standard' | 'photo' | 'custom' | 'simple'
+    recordMode: 'simple', // 'standard' | 'photo' | 'simple'
     images: [], // array of image urls
-    customSurveyData: null, // for custom mode
     status: initialStatus // 'completed' | 'scheduled'
   });
 
@@ -171,12 +223,14 @@ const ObservationForm = ({ mode = 'edit' }) => {
   const [schools, setSchools] = useState([]);
   // 教师列表（用于听课人选择）
   const [teachers, setTeachers] = useState([]);
+  // 集中调研模式下评价与总结的自动编号开关
+  const [simpleAutoNumber, setSimpleAutoNumber] = useState(false);
 
   useEffect(() => {
     const loadSchools = async () => {
       if (DataService.getSchools) {
         const schoolsData = await DataService.getSchools();
-        setSchools(schoolsData.map(s => s.name));
+        setSchools(schoolsData);
       }
     };
     loadSchools();
@@ -291,6 +345,84 @@ const ObservationForm = ({ mode = 'edit' }) => {
     }
   };
 
+  // 集中调研模式自动编号相关
+  const CIRCLE_NUMBERS = ['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'];
+  const circleNumberRegex = /^[①②③④⑤⑥⑦⑧⑨⑩]+\s*/;
+
+  const applyAutoNumberToText = (text) => {
+    if (!text) return text;
+    return text.split('\n').map((line, idx) => {
+      if (!line.trim()) return line;
+      const num = CIRCLE_NUMBERS[idx];
+      if (!num) return line;
+      if (circleNumberRegex.test(line)) {
+        return line.replace(circleNumberRegex, num + ' ');
+      }
+      return `${num} ${line}`;
+    }).join('\n');
+  };
+
+  const toggleSimpleAutoNumber = () => {
+    setSimpleAutoNumber(prev => !prev);
+  };
+
+  const handleSimpleTextKeyDown = (field) => (e) => {
+    if (!simpleAutoNumber || e.key !== 'Enter' || isReadOnly) return;
+
+    const textarea = e.target;
+    const value = textarea.value;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const beforeCursor = value.slice(0, start);
+    const afterCursor = value.slice(end);
+
+    const linesBefore = beforeCursor.split('\n');
+    const currentLineIndex = linesBefore.length - 1;
+    const currentLine = linesBefore[currentLineIndex];
+
+    const allLines = value.split('\n');
+    const hasAnyNumber = allLines.some(l => circleNumberRegex.test(l));
+
+    const shouldAutoNumber = circleNumberRegex.test(currentLine) ||
+      (!hasAnyNumber && currentLineIndex === 0 && currentLine.trim().length > 0);
+
+    if (!shouldAutoNumber) return;
+
+    e.preventDefault();
+
+    // 确保当前行有编号
+    if (!circleNumberRegex.test(currentLine)) {
+      linesBefore[currentLineIndex] = `${CIRCLE_NUMBERS[currentLineIndex]} ${currentLine}`;
+    } else {
+      linesBefore[currentLineIndex] = currentLine.replace(circleNumberRegex, `${CIRCLE_NUMBERS[currentLineIndex]} `);
+    }
+
+    const newBeforeCursor = linesBefore.join('\n');
+    const newLineNum = CIRCLE_NUMBERS[currentLineIndex + 1];
+    const insertText = '\n' + (newLineNum ? newLineNum + ' ' : '');
+    const rawValue = newBeforeCursor + insertText + afterCursor;
+
+    // 重新编号后续已有编号的行
+    const finalLines = rawValue.split('\n').map((line, idx) => {
+      if (idx <= currentLineIndex + 1) return line;
+      if (!line.trim()) return line;
+      const num = CIRCLE_NUMBERS[idx];
+      if (!num) return line;
+      if (circleNumberRegex.test(line)) {
+        return line.replace(circleNumberRegex, num + ' ');
+      }
+      return line;
+    });
+
+    const finalValue = finalLines.join('\n');
+    setFormData(prev => ({ ...prev, [field]: finalValue }));
+
+    const newCursor = newBeforeCursor.length + insertText.length;
+    setTimeout(() => {
+      textarea.setSelectionRange(newCursor, newCursor);
+    }, 0);
+  };
+
   const handleUploadSuccess = (field) => (url) => {
     if (field === 'images') {
         setFormData(prev => ({
@@ -377,11 +509,6 @@ const ObservationForm = ({ mode = 'edit' }) => {
       finalData.status = 'completed';
     }
 
-    if (recordMode === 'custom') {
-      // Handle custom mode submit via SurveyEngine callback, not here
-      return;
-    }
-
     try {
       if (id) {
         // Update existing record
@@ -409,7 +536,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
           <div>
             <h3 className="text-lg leading-6 font-medium text-gray-900">
               {isReadOnly ? '查看听课记录' :
-               formMode === 'schedule-basic' ? '编辑日程安排（基本信息）' :
+               formMode === 'schedule-basic' ? (id ? '编辑日程安排（基本信息）' : '新建日程安排') :
                formMode === 'schedule-full' ? '编辑日程安排（完整记录）' :
                mode === 'edit' ? '编辑听课记录' : '新建听课记录'}
             </h3>
@@ -449,16 +576,6 @@ const ObservationForm = ({ mode = 'edit' }) => {
               >
                 标准模式
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRecordMode('custom');
-                  setFormData(prev => ({ ...prev, recordMode: 'custom' }));
-                }}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${recordMode === 'custom' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                自定义模式
-              </button> 
             </div>
           )}
         </div>
@@ -492,17 +609,14 @@ const ObservationForm = ({ mode = 'edit' }) => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">学校</label>
-              <select
-                name="school"
+              <SchoolSelector
+                className="w-full mt-1"
+                schools={schools}
                 value={formData.school}
-                onChange={handleChange}
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border"
-                required
+                onChange={(val) => handleChange({ target: { name: 'school', value: val } })}
+                placeholder="请选择学校"
                 disabled={isReadOnly}
-              >
-                <option value="">请选择学校</option>
-                {schools.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">年级</label>
@@ -534,7 +648,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
             {/* 听课人选择 - 提前到学科之前 */}
             <div>
               <label className="block text-sm font-medium text-gray-700">听课人</label>
-              {isTeacher(currentUser) && (formMode.startsWith('observation-') || formMode === 'schedule-full') ? (
+              {isTeacher(currentUser) && (formMode.startsWith('observation-') || formMode.startsWith('schedule-')) ? (
                 /* 教师填写听课记录时，听课人固定为本人 */
                 <input
                   type="text"
@@ -709,57 +823,22 @@ const ObservationForm = ({ mode = 'edit' }) => {
           </section>
         )}
 
-        {/* Custom Mode View - 在 schedule-basic 模式下不显示 */}
-        {recordMode === 'custom' && formMode !== 'schedule-basic' && (
-          <section className="bg-white rounded-lg">
-             <SurveyEngine 
-                initialData={{ ...(formData.customSurveyData || { title: '自定义听课记录', questions: [] }), customAnswers: formData.customAnswers }} 
-                mode={displayMode === 'board' ? 'view' : (mode === 'fill' ? 'view' : 'create')}
-                disablePermissions={true}
-                onSave={(surveyData) => {
-                    setFormData(prev => ({ ...prev, customSurveyData: surveyData }));
-                }} 
-                onSubmit={async (answers) => {
-                    // For custom mode fill
-                    const finalData = { ...formData, recordMode, customSurveyData: formData.customSurveyData, customAnswers: answers };
-                    const userStr = localStorage.getItem('currentUser');
-                    const currentUser = userStr ? JSON.parse(userStr) : null;
-
-                    if (currentUser && currentUser.role === 'teacher') {
-                        finalData.observer = currentUser.name;
-                    }
-
-                    // If filling a scheduled observation, mark it as completed
-                    if (id && finalData.status === 'scheduled') {
-                        finalData.status = 'completed';
-                    }
-
-                    try {
-                        if (id) {
-                            await DataService.updateSurvey(id, finalData, currentUser);
-                        } else {
-                            await DataService.addSurvey(finalData, currentUser);
-                        }
-
-                        if (fromSchedule) {
-                            navigate('/schedules');
-                        } else {
-                            navigate('/observations');
-                        }
-                    } catch (error) {
-                        alert(`保存失败: ${error.message}`);
-                    }
-                }}
-                onCancel={() => navigate(fromSchedule ? '/schedules' : '/observations')} 
-              />
-          </section>
-        )}
-
         {/* Simple Mode View */}
         {recordMode === 'simple' && formMode !== 'schedule-basic' && (
           <>
             <section>
-              <h4 className="text-md font-medium text-gray-900 mb-4 border-l-4 border-blue-500 pl-2">2. 评价与总结</h4>
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-md font-medium text-gray-900 border-l-4 border-blue-500 pl-2">2. 评价与总结</h4>
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={toggleSimpleAutoNumber}
+                    className={`text-xs px-2 py-1 rounded border ${simpleAutoNumber ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    {simpleAutoNumber ? '关闭自动编号' : '自动编号'}
+                  </button>
+                )}
+              </div>
               <div className="space-y-4">
                 <div>
                   <div className="flex justify-between items-center mb-1">
@@ -767,6 +846,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     {!isReadOnly && (
                       <div className="flex gap-2">
                         <UploadButton onUploadSuccess={handleUploadSuccess('highlights')} />
+                        <CameraButton onCaptureSuccess={handleUploadSuccess('highlights')} />
                       </div>
                     )}
                   </div>
@@ -775,6 +855,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     rows={4}
                     value={formData.highlights}
                     onChange={handleChange}
+                    onKeyDown={handleSimpleTextKeyDown('highlights')}
                     className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                     disabled={isReadOnly}
                   />
@@ -785,6 +866,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     {!isReadOnly && (
                       <div className="flex gap-2">
                         <UploadButton onUploadSuccess={handleUploadSuccess('problems_suggestions')} />
+                        <CameraButton onCaptureSuccess={handleUploadSuccess('problems_suggestions')} />
                       </div>
                     )}
                   </div>
@@ -793,6 +875,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     rows={4}
                     value={formData.problems_suggestions}
                     onChange={handleChange}
+                    onKeyDown={handleSimpleTextKeyDown('problems_suggestions')}
                     className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                     disabled={isReadOnly}
                   />
@@ -808,6 +891,7 @@ const ObservationForm = ({ mode = 'edit' }) => {
                   {!isReadOnly && (
                     <div className="flex gap-2">
                       <UploadButton onUploadSuccess={handleUploadSuccess('school_suggestions')} />
+                      <CameraButton onCaptureSuccess={handleUploadSuccess('school_suggestions')} />
                     </div>
                   )}
                 </div>

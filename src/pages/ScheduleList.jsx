@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Search, Eye, Edit, Trash2, Filter, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Search, Eye, Edit, Trash2, Filter, Calendar, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import DataService from '../services/dataService';
 import { useAuth } from '../context/AuthContext';
+import SchoolSelector from '../components/SchoolSelector';
 import { hasPermission, isTeacher, ROLES } from '../utils/rbac';
 
 const ScheduleList = () => {
@@ -19,6 +20,11 @@ const ScheduleList = () => {
   const [schools, setSchools] = useState([]);
   const [subjects, setSubjects] = useState([]);
 
+  const tableScrollRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartX = useRef(0);
+  const dragScrollLeft = useRef(0);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,7 +32,7 @@ const ScheduleList = () => {
       loadData();
       if (DataService.getSchools) {
         const schoolsData = await DataService.getSchools();
-        setSchools(schoolsData.map(s => s.name));
+        setSchools(schoolsData);
       }
       if (DataService.getSubjects) {
         const subjectsData = await DataService.getSubjects();
@@ -106,7 +112,7 @@ const ScheduleList = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">日程安排</h1>
             <div className="flex space-x-3">
-          {hasPermission(user, 'canManageSchedules') && (
+          {(hasPermission(user, 'canManageSchedules') || isTeacher(user)) && (
             <Link
               to={`/observations/new?from=schedule&mode=basic&status=scheduled`}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
@@ -129,17 +135,14 @@ const ScheduleList = () => {
             <div className="flex-1 flex flex-wrap gap-3">
                 {/* School Filter */}
                 <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Search className="h-4 w-4 text-gray-400" />
-                    </div>
-                    <select
-                        className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
+                    <SchoolSelector
+                        className="w-48"
+                        schools={schools}
                         value={filters.school}
-                        onChange={(e) => handleFilterChange('school', e.target.value)}
-                    >
-                        <option value="">所有学校</option>
-                        {schools.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                        onChange={(val) => handleFilterChange('school', val)}
+                        placeholder="所有学校"
+                        icon={<Search className="h-4 w-4 text-gray-400" />}
+                    />
                 </div>
 
                 {/* Subject Filter */}
@@ -178,8 +181,26 @@ const ScheduleList = () => {
 
       {/* Table */}
       <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+        <div
+          ref={tableScrollRef}
+          className={`overflow-x-auto select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          onMouseDown={(e) => {
+            setIsDragging(true);
+            dragStartX.current = e.pageX - (tableScrollRef.current?.offsetLeft || 0);
+            dragScrollLeft.current = tableScrollRef.current?.scrollLeft || 0;
+          }}
+          onMouseMove={(e) => {
+            if (!isDragging || !tableScrollRef.current) return;
+            e.preventDefault();
+            const x = e.pageX - (tableScrollRef.current.offsetLeft || 0);
+            const walk = (x - dragStartX.current) * 1.2;
+            tableScrollRef.current.scrollLeft = dragScrollLeft.current - walk;
+          }}
+          onMouseUp={() => setIsDragging(false)}
+          onMouseLeave={() => setIsDragging(false)}
+        >
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
             <tr>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 听课人
@@ -255,36 +276,30 @@ const ScheduleList = () => {
                     <Eye className="h-5 w-5" />
                   </button>
 
-                  {/* 教师操作按钮 - 只有听课人自己可见 */}
-                  {user && user.name === schedule.observer && (
+                  {/* 修改日程 - 管理用户或自己拥有的日程 */}
+                  {(hasPermission(user, 'canManageSchedules') || (isTeacher(user) && (schedule.observer === user?.name || schedule.createdBy === user?.id))) && (
                     <button
-                      onClick={() => handleTeacherAction(schedule.id, schedule.status)}
-                      className={`mr-3 ${
-                        schedule.status === 'scheduled'
-                          ? 'text-green-600 hover:text-green-900'
-                          : schedule.status === 'expired'
-                          ? 'text-red-600 hover:text-red-900'
-                          : 'text-amber-600 hover:text-amber-900'
-                      }`}
-                      title={schedule.status === 'scheduled' || schedule.status === 'expired' ? '填写听课记录' : '修改听课记录'}
-                    >
-                      <Edit className="h-5 w-5" />
-                    </button>
-                  )}
-
-                  {/* 编辑按钮 - 只有有管理权限的用户可见 */}
-                  {hasPermission(user, 'canManageSchedules') && (
-                    <button
-                      onClick={() => handleEdit(schedule.id)}
+                      onClick={() => navigate(`/observations/edit/${schedule.id}?from=schedule&mode=basic`)}
                       className="text-indigo-600 hover:text-indigo-900 mr-3"
-                      title={schedule.status === 'completed' ? '编辑听课记录' : '编辑日程安排'}
+                      title="修改日程"
                     >
                       <Edit className="h-5 w-5" />
                     </button>
                   )}
 
-                  {/* 删除按钮 - 只有有管理权限的用户可见 */}
-                  {hasPermission(user, 'canManageSchedules') && (
+                  {/* 填写听课记录 - 管理用户或自己作为听课人的日程 */}
+                  {(hasPermission(user, 'canManageSchedules') || (isTeacher(user) && schedule.observer === user?.name)) && (
+                    <button
+                      onClick={() => navigate(`/observations/edit/${schedule.id}?from=schedule&mode=full`)}
+                      className="text-green-600 hover:text-green-900 mr-3"
+                      title="填写听课记录"
+                    >
+                      <FileText className="h-5 w-5" />
+                    </button>
+                  )}
+
+                  {/* 删除按钮 - 管理用户或自己拥有的日程 */}
+                  {(hasPermission(user, 'canManageSchedules') || (isTeacher(user) && (schedule.observer === user?.name || schedule.createdBy === user?.id))) && (
                     <button
                       onClick={() => handleDelete(schedule.id)}
                       className="text-red-600 hover:text-red-900"
@@ -309,6 +324,7 @@ const ScheduleList = () => {
             )}
           </tbody>
         </table>
+        </div>
 
         {/* 分页组件 */}
         {filteredSchedules.length > 0 && (

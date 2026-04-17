@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { X, Clock, Users, Tag } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Clock, Users, Tag, Search, Check } from 'lucide-react';
 import DataService from '../services/dataService';
+import SchoolSelector from './SchoolSelector';
 
 export default function SurveyPublishModal({ survey, onClose, onPublish }) {
   const [publishType, setPublishType] = useState('immediate'); // immediate, scheduled
@@ -20,7 +21,8 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
   const [allUsers, setAllUsers] = useState([]);
   const [allGroups, setAllGroups] = useState([]);
   const [subjectFilter, setSubjectFilter] = useState('');
-  
+  const [schoolSearch, setSchoolSearch] = useState('');
+
   const [schools, setSchools] = useState([]);
   const [subjects, setSubjects] = useState([]);
 
@@ -38,7 +40,7 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
       
       if (DataService.getSchools) {
         const schoolsData = await DataService.getSchools();
-        setSchools(schoolsData.map(s => s.name));
+        setSchools(schoolsData);
       }
       
       if (DataService.getSubjects) {
@@ -139,16 +141,13 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">调研学校</label>
-                <select 
+                <SchoolSelector
+                  className="w-full"
+                  schools={schools}
                   value={surveySchool}
-                  onChange={(e) => setSurveySchool(e.target.value)}
-                  className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">请选择学校</option>
-                  {schools.map(school => (
-                    <option key={school} value={school}>{school}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setSurveySchool(val)}
+                  placeholder="请选择学校"
+                />
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">参与调研教研员</label>
@@ -264,18 +263,66 @@ export default function SurveyPublishModal({ survey, onClose, onPublish }) {
             )}
 
             {targetType === 'school' && (
-              <div className="flex flex-wrap gap-3 p-4 bg-gray-50 rounded-md border">
-                {schools.map(school => (
-                  <label key={school} className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1 border rounded-full text-sm">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedSchools.includes(school)}
-                      onChange={() => toggleSelection(school, selectedSchools, setSelectedSchools)}
-                      className="text-blue-600 rounded"
-                    />
-                    <span>{school}</span>
-                  </label>
-                ))}
+              <div className="p-4 bg-gray-50 rounded-md border space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={schoolSearch}
+                    onChange={(e) => setSchoolSearch(e.target.value)}
+                    placeholder="搜索学校..."
+                    className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                {(() => {
+                  const filtered = schoolSearch.trim()
+                    ? schools.filter(s => (s.name || '').toLowerCase().includes(schoolSearch.trim().toLowerCase()))
+                    : schools;
+                  const groups = {};
+                  filtered.forEach(s => {
+                    const type = s.type || '其他';
+                    if (!groups[type]) groups[type] = [];
+                    groups[type].push(s);
+                  });
+                  Object.keys(groups).forEach(type => {
+                    groups[type].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-CN'));
+                  });
+                  const typeOrder = ['小学', '初中', '高中', '九年一贯制', '十二年一贯制'];
+                  const sortedKeys = Object.keys(groups).sort((a, b) => {
+                    const idxA = typeOrder.indexOf(a);
+                    const idxB = typeOrder.indexOf(b);
+                    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                    if (idxA !== -1) return -1;
+                    if (idxB !== -1) return 1;
+                    return a.localeCompare(b, 'zh-CN');
+                  });
+                  return (
+                    <div className="max-h-56 overflow-y-auto space-y-3">
+                      {sortedKeys.length === 0 ? (
+                        <div className="text-sm text-gray-500 text-center py-2">未找到匹配的学校</div>
+                      ) : (
+                        sortedKeys.map(type => (
+                          <div key={type}>
+                            <div className="text-xs font-semibold text-gray-500 mb-2 sticky top-0 bg-gray-50 py-1">{type}</div>
+                            <div className="flex flex-wrap gap-2">
+                              {groups[type].map(school => (
+                                <label key={school.id || school.name} className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 border rounded-full text-sm hover:border-blue-300 transition-colors">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedSchools.includes(school.name)}
+                                    onChange={() => toggleSelection(school.name, selectedSchools, setSelectedSchools)}
+                                    className="text-blue-600 rounded"
+                                  />
+                                  <span>{school.name}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

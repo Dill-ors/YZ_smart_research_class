@@ -119,13 +119,13 @@ export const canDeleteSchedule = (user, schedule) => {
     return true;
   }
 
-  // 教师可以删除自己创建的记录
-  if (user.role === ROLES.TEACHER && schedule.createdBy === user.id) {
+  // 教师/区教研员可以删除自己创建的记录
+  if ((user.role === ROLES.TEACHER || user.role === 'district_researcher') && schedule.createdBy === user.id) {
     return true;
   }
 
-  // 教师可以删除自己作为听课人的记录（向后兼容）
-  if (user.role === ROLES.TEACHER && schedule.observer === user.name) {
+  // 教师/区教研员可以删除自己作为听课人的记录（向后兼容）
+  if ((user.role === ROLES.TEACHER || user.role === 'district_researcher') && schedule.observer === user.name) {
     return true;
   }
 

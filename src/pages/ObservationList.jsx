@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Search, Eye, FileText, Edit, Trash2, Filter, User, BookOpen, Calendar, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import DataService from '../services/dataService';
 import { useAuth } from '../context/AuthContext';
-import { hasPermission } from '../utils/rbac';
+import SchoolSelector from '../components/SchoolSelector';
+import { hasPermission, canDeleteSchedule } from '../utils/rbac';
 
 const ObservationList = () => {
   const { user } = useAuth();
@@ -22,6 +23,7 @@ const ObservationList = () => {
   const ITEMS_PER_PAGE = 10;
   const [schools, setSchools] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   const navigate = useNavigate();
 
@@ -30,7 +32,7 @@ const ObservationList = () => {
       loadData();
       if (DataService.getSchools) {
         const schoolsData = await DataService.getSchools();
-        setSchools(schoolsData.map(s => s.name));
+        setSchools(schoolsData);
       }
       if (DataService.getSubjects) {
         const subjectsData = await DataService.getSubjects();
@@ -91,7 +93,7 @@ const ObservationList = () => {
 
   const handleDelete = async (id) => {
     if (window.confirm('确定要删除这条记录吗？')) {
-      await DataService.deleteSurvey(id);
+      await DataService.deleteSurvey(id, user);
       loadData();
     }
   };
@@ -109,17 +111,157 @@ const ObservationList = () => {
       setCurrentPage(1); // Reset to first page when filters change
     };
 
+  const filteredSurveys = getFilteredSurveys();
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedIds(filteredSurveys.map(s => s.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectOne = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(sid => sid !== id) : [...prev, id]
+    );
+  };
+
+  const exportToWord = () => {
+    const selectedSurveys = filteredSurveys.filter(s => selectedIds.includes(s.id));
+    if (selectedSurveys.length === 0) {
+      alert('请先选择要导出的记录');
+      return;
+    }
+
+    const lessonTypeMap = {
+      new: '新授课',
+      review: '复习课',
+      exercise: '习题课',
+      experiment: '实验课',
+      other: '其它'
+    };
+
+    let html = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office'
+        xmlns:w='urn:schemas-microsoft-com:office:word'
+        xmlns='http://www.w3.org/TR/REC-html40'>
+      <head><meta charset='utf-8'><title>听课记录导出</title></head>
+      <body>
+      <div style="font-family: SimSun, 'Times New Roman', serif; font-size: 12pt; line-height: 1.6; color: #000; padding: 20px;">
+        <h1 style="text-align: center; font-size: 20pt; font-weight: bold; margin-bottom: 30px;">听课记录汇总</h1>
+    `;
+
+    selectedSurveys.forEach((survey, idx) => {
+      html += `<div style="margin-bottom: 40px; page-break-after: always;">`;
+      html += `<h2 style="font-size: 16pt; font-weight: bold; margin-bottom: 15px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">记录 ${idx + 1}: ${survey.subject || ''} - ${survey.teacher || ''}</h2>`;
+      html += `<table border="1" cellspacing="0" cellpadding="8" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">`;
+      html += `
+        <tr><td style="background-color: #f3f4f6; width: 20%;"><strong>学科</strong></td><td>${survey.subject || ''}</td></tr>
+        <tr><td style="background-color: #f3f4f6;"><strong>听课人</strong></td><td>${survey.researcherName ? `${survey.researcherName} (教研员)` : survey.observer || ''}</td></tr>
+        <tr><td style="background-color: #f3f4f6;"><strong>学校</strong></td><td>${survey.school || ''}</td></tr>
+        <tr><td style="background-color: #f3f4f6;"><strong>班级</strong></td><td>${survey.grade || ''}${survey.class || ''}</td></tr>
+        <tr><td style="background-color: #f3f4f6;"><strong>授课教师</strong></td><td>${survey.teacher || ''}</td></tr>
+        <tr><td style="background-color: #f3f4f6;"><strong>时间</strong></td><td>${survey.date || ''}</td></tr>
+        <tr><td style="background-color: #f3f4f6;"><strong>调研方式</strong></td><td>${survey.survey_mode || ''}</td></tr>
+        <tr><td style="background-color: #f3f4f6;"><strong>课题</strong></td><td>${survey.topic || ''}</td></tr>
+        <tr><td style="background-color: #f3f4f6;"><strong>课型</strong></td><td>${lessonTypeMap[survey.lesson_type] || survey.lesson_type || ''}</td></tr>
+        <tr><td style="background-color: #f3f4f6;"><strong>时段</strong></td><td>${survey.period || ''}</td></tr>
+      `;
+      html += `</table>`;
+
+      if (survey.processSteps && survey.processSteps.length > 0) {
+        html += `<h3 style="font-size: 14pt; font-weight: bold; margin: 15px 0 10px;">教学过程实录</h3>`;
+        survey.processSteps.forEach((step, sIdx) => {
+          html += `<div style="margin-bottom: 10px; padding-left: 10px; border-left: 3px solid #3B82F6;">`;
+          html += `<p><strong>环节 ${sIdx + 1}:</strong> ${step.type || ''} ${step.time ? `(${step.time}分钟)` : ''}</p>`;
+          html += `<p>${(step.content || '').replace(/\n/g, '<br/>')}</p>`;
+          html += `</div>`;
+        });
+      }
+
+      const teacherFields = [
+        { label: '教学目标', value: survey.teacher_target },
+        { label: '教学内容', value: survey.teacher_content },
+        { label: '教学方法', value: survey.teacher_method },
+        { label: '教学组织', value: survey.teacher_org },
+        { label: '教师素养', value: survey.teacher_literacy }
+      ].filter(f => f.value);
+
+      if (teacherFields.length > 0) {
+        html += `<h3 style="font-size: 14pt; font-weight: bold; margin: 15px 0 10px;">教师教学行为观察</h3>`;
+        teacherFields.forEach(f => {
+          html += `<p style="margin-bottom: 8px;"><strong>${f.label}:</strong><br/>${f.value.replace(/\n/g, '<br/>')}</p>`;
+        });
+      }
+
+      const studentFields = [
+        { label: '参与度', value: survey.student_participation },
+        { label: '思维状态', value: survey.student_thinking },
+        { label: '目标达成', value: survey.student_achievement }
+      ].filter(f => f.value);
+
+      if (studentFields.length > 0) {
+        html += `<h3 style="font-size: 14pt; font-weight: bold; margin: 15px 0 10px;">学生学习状态观察</h3>`;
+        studentFields.forEach(f => {
+          html += `<p style="margin-bottom: 8px;"><strong>${f.label}:</strong><br/>${f.value.replace(/\n/g, '<br/>')}</p>`;
+        });
+      }
+
+      if (survey.highlights) {
+        html += `<h3 style="font-size: 14pt; font-weight: bold; margin: 15px 0 10px;">主要优点 / 课堂特色与亮点</h3>`;
+        html += `<p style="margin-bottom: 8px;">${survey.highlights.replace(/\n/g, '<br/>')}</p>`;
+      }
+      if (survey.problems_suggestions) {
+        html += `<h3 style="font-size: 14pt; font-weight: bold; margin: 15px 0 10px;">存在问题 / 问题与改进建议</h3>`;
+        html += `<p style="margin-bottom: 8px;">${survey.problems_suggestions.replace(/\n/g, '<br/>')}</p>`;
+      }
+      if (survey.school_suggestions) {
+        html += `<h3 style="font-size: 14pt; font-weight: bold; margin: 15px 0 10px;">给学校的意见建议</h3>`;
+        html += `<p style="margin-bottom: 8px;">${survey.school_suggestions.replace(/\n/g, '<br/>')}</p>`;
+      }
+      if (survey.overall_evaluation) {
+        html += `<h3 style="font-size: 14pt; font-weight: bold; margin: 15px 0 10px;">总体评价 / 补充说明</h3>`;
+        html += `<p style="margin-bottom: 8px;">${survey.overall_evaluation.replace(/\n/g, '<br/>')}</p>`;
+      }
+
+      if (survey.images && survey.images.length > 0) {
+        html += `<h3 style="font-size: 14pt; font-weight: bold; margin: 15px 0 10px;">上传图片</h3>`;
+        html += `<div style="display: flex; flex-wrap: wrap; gap: 10px;">`;
+        survey.images.forEach(url => {
+          html += `<img src="${url}" style="max-width: 200px; max-height: 200px; border: 1px solid #ccc;" />`;
+        });
+        html += `</div>`;
+      }
+
+      html += `</div>`;
+    });
+
+    html += `</div></body></html>`;
+
+    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `听课记录导出_${new Date().toLocaleDateString('zh-CN')}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center print:hidden">
             <h1 className="text-2xl font-bold text-gray-900">听课记录</h1>
             <div className="flex space-x-3">
-                <button 
-                  onClick={() => window.print()}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                <button
+                  onClick={exportToWord}
+                  disabled={selectedIds.length === 0}
+                  className={`inline-flex items-center px-4 py-2 border rounded-md shadow-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${selectedIds.length === 0 ? 'border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`}
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  导出列表PDF
+                  导出Word {selectedIds.length > 0 && `(${selectedIds.length})`}
                 </button>
           <Link
             to="/observations/new"
@@ -178,17 +320,14 @@ const ObservationList = () => {
 
                 {/* School Filter */}
                 <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <User className="h-4 w-4 text-gray-400" />
-                    </div>
-                    <select 
-                        className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
+                    <SchoolSelector
+                        className="w-48"
+                        schools={schools}
                         value={filters.school}
-                        onChange={(e) => handleFilterChange('school', e.target.value)}
-                    >
-                        <option value="">所有学校</option>
-                        {schools.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                        onChange={(val) => handleFilterChange('school', val)}
+                        placeholder="所有学校"
+                        icon={<User className="h-4 w-4 text-gray-400" />}
+                    />
                 </div>
 
                 {/* Subject Filter */}
@@ -269,6 +408,14 @@ const ObservationList = () => {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
+              <th scope="col" className="px-3 py-3 text-left">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.length > 0 && selectedIds.length === filteredSurveys.length}
+                  onChange={handleSelectAll}
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+              </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 学科
               </th>
@@ -297,6 +444,14 @@ const ObservationList = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {currentItems.map((survey) => (
               <tr key={survey.id} className="hover:bg-gray-50 transition-colors">
+                <td className="px-3 py-4 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(survey.id)}
+                    onChange={() => handleSelectOne(survey.id)}
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   {survey.subject}
                 </td>
@@ -334,8 +489,8 @@ const ObservationList = () => {
                       <Edit className="h-5 w-5" />
                     </button>
                   )}
-                  {/* 删除按钮 - 只有有删除权限的用户可见 */}
-                  {hasPermission(user, 'canDelete') && (
+                  {/* 删除按钮 - 管理员/主任/校长有全局删除权限，教师/区教研员只能删除自己的记录 */}
+                  {(hasPermission(user, 'canDelete') || ((user?.role === 'teacher' || user?.role === 'district_researcher') && survey.observer === user?.name)) && (
                     <button
                       onClick={() => handleDelete(survey.id)}
                       className="text-red-600 hover:text-red-900"
@@ -349,7 +504,7 @@ const ObservationList = () => {
             ))}
             {surveys.length === 0 && (
               <tr>
-                <td colSpan="7" className="px-6 py-10 text-center text-gray-500">
+                <td colSpan="8" className="px-6 py-10 text-center text-gray-500">
                   <div className="flex flex-col items-center justify-center">
                     <FileText className="h-12 w-12 text-gray-300 mb-2" />
                     <p>暂无数据</p>

@@ -448,12 +448,12 @@ const DataService = {
       const userRole = currentUser.role;
       const userName = currentUser.name;
 
-      // 特殊情况：教师可以删除自己作为听课人的记录
-      if (userRole === 'teacher') {
+      // 特殊情况：教师或区教研员可以删除自己作为听课人的记录
+      if (userRole === 'teacher' || userRole === 'district_researcher') {
         if (surveyToDelete.observer !== userName) {
           throw new Error(`无权删除其他人的听课记录`);
         }
-        // 教师可以删除自己的记录，继续执行删除
+        // 可以删除自己的记录，继续执行删除
       } else {
         // 其他角色使用原有的权限检查逻辑
         const school = surveyToDelete.school;
@@ -1004,13 +1004,13 @@ const DataService = {
           .filter(school => school.region?.trim() === userRegion)
           .map(school => school.name?.trim());
 
-        // 过滤：属于该区域学校且自己是听课人的日程
+        // 过滤：属于该区域学校且自己是听课人或创建者的日程
         filteredSurveys = teacherSurveys.filter(s =>
-          regionSchools.includes(s.school?.trim()) && s.observer === userName
+          regionSchools.includes(s.school?.trim()) && (s.observer === userName || s.createdBy === currentUser.id)
         );
       } else {
-        // 没有区域：只看到自己作为听课人的日程
-        filteredSurveys = teacherSurveys.filter(s => s.observer === userName);
+        // 没有区域：只看到自己作为听课人或创建者的日程
+        filteredSurveys = teacherSurveys.filter(s => s.observer === userName || s.createdBy === currentUser.id);
       }
     }
     // 其他角色返回空数组

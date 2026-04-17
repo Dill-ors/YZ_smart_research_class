@@ -17,8 +17,9 @@ import {
 import { useAuth } from '../context/AuthContext';
 import DataService from '../services/dataService';
 import { hasPermission } from '../utils/rbac';
-import { Calendar, CheckCircle, Clock, AlertCircle, ArrowRight, Filter, User, BookOpen } from 'lucide-react';
+import { Calendar, CheckCircle, Clock, AlertCircle, ArrowRight, Filter, User, BookOpen, X, Eye, FileEdit } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import SchoolSelector from '../components/SchoolSelector';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -26,12 +27,17 @@ const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [completionStats, setCompletionStats] = useState(null);
   const [unsubmittedReportsCount, setUnsubmittedReportsCount] = useState(0);
+  const [pendingObservations, setPendingObservations] = useState([]);
+  const [pendingSurveyReports, setPendingSurveyReports] = useState([]);
   const [schedules, setSchedules] = useState([]);
+  const [activePopover, setActivePopover] = useState(null); // 'schools' | 'reports' | null
   const [filters, setFilters] = useState({
     school: '',
     subject: '',
     observer: !hasPermission(user, 'canManageSchedules') ? user?.name || '' : '',
-    timeSpan: 'all'
+    filterTimeType: 'single',
+    filterTime: '',
+    filterTimeEnd: ''
   });
 
   const [schools, setSchools] = useState([]);
@@ -42,7 +48,7 @@ const Dashboard = () => {
       loadStats();
       if (DataService.getSchools) {
         const schoolsData = await DataService.getSchools();
-        setSchools(schoolsData.map(s => s.name));
+        setSchools(schoolsData);
       }
       if (DataService.getSubjects) {
         const subjectsData = await DataService.getSubjects();
@@ -66,8 +72,19 @@ const Dashboard = () => {
     if (!isManager) {
         const userSchedules = await DataService.getSchedules(user, true);
         // For teachers, count scheduled observations where they are the observer
-        const pendingObservations = userSchedules.filter(s => s.status === 'scheduled' && s.observer === user?.name);
-        setUnsubmittedReportsCount(pendingObservations.length);
+        const pending = userSchedules.filter(s => s.status === 'scheduled' && s.observer === user?.name);
+        setPendingObservations(pending);
+
+        // 获取集中调研模块下未完成的报告
+        const fetchedReports = await DataService.getReports({ currentUser: user });
+        const fetchedResponses = await DataService.getResponses();
+        const pendingReports = fetchedReports.filter(r => {
+            if (r.status !== 'published') return false;
+            const hasSubmitted = fetchedResponses.some(resp => resp.surveyId === r.id && resp.userId === user?.username);
+            return !hasSubmitted;
+        });
+        setPendingSurveyReports(pendingReports);
+        setUnsubmittedReportsCount(pendingReports.length);
     }
 
     setStats({ ...data, recentSurveys: surveys.slice(0, 5) });
@@ -142,22 +159,48 @@ const Dashboard = () => {
         </div>
         
         <div className="flex-1 flex flex-wrap gap-3">
-             {/* Time Span Filter */}
-            <div className="relative">
-                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                     <Calendar className="h-4 w-4 text-gray-400" />
-                 </div>
+             {/* Time Filter */}
+            <div className="flex items-center flex-wrap gap-2">
                  <select
-                     className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
-                     value={filters.timeSpan}
-                     onChange={(e) => handleFilterChange('timeSpan', e.target.value)}
+                     value={filters.filterTimeType}
+                     onChange={(e) => {
+                       handleFilterChange('filterTimeType', e.target.value);
+                       if (e.target.value === 'single') handleFilterChange('filterTimeEnd', '');
+                     }}
+                     className="block w-32 py-2 px-3 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
                  >
-                     <option value="all">全部时间</option>
-                     <option value="week">本周</option>
-                     <option value="month">本月</option>
-                     <option value="semester">本学期</option>
-                     <option value="year">本学年</option>
+                     <option value="single">具体某一天</option>
+                     <option value="range">时间段</option>
                  </select>
+
+                 <div className="relative flex items-center">
+                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                         <Calendar className="h-4 w-4 text-gray-400" />
+                     </div>
+                     <input
+                         type="date"
+                         value={filters.filterTime}
+                         onChange={(e) => handleFilterChange('filterTime', e.target.value)}
+                         className="block w-full pl-10 pr-3 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors"
+                     />
+                 </div>
+
+                 {filters.filterTimeType === 'range' && (
+                     <>
+                         <span className="text-gray-500 text-sm">至</span>
+                         <div className="relative flex items-center">
+                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                 <Calendar className="h-4 w-4 text-gray-400" />
+                             </div>
+                             <input
+                                 type="date"
+                                 value={filters.filterTimeEnd}
+                                 onChange={(e) => handleFilterChange('filterTimeEnd', e.target.value)}
+                                 className="block w-full pl-10 pr-3 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors"
+                             />
+                         </div>
+                     </>
+                 )}
             </div>
 
             {/* Subject Filter */}
@@ -194,54 +237,125 @@ const Dashboard = () => {
 
             {/* School Filter */}
             <div className="relative">
-                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                     <CheckCircle className="h-4 w-4 text-gray-400" />
-                 </div>
-                 <select
-                     className="block w-full pl-10 pr-10 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
+                 <SchoolSelector
+                     className="w-48"
+                     schools={schools}
                      value={filters.school}
-                     onChange={(e) => handleFilterChange('school', e.target.value)}
-                 >
-                     <option value="">所有学校</option>
-                     {schools.map(s => <option key={s} value={s}>{s}</option>)}
-                 </select>
+                     onChange={(val) => handleFilterChange('school', val)}
+                     placeholder="所有学校"
+                     icon={<CheckCircle className="h-4 w-4 text-gray-400" />}
+                 />
             </div>
         </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: '调研学校数', value: stats.schoolCount, unit: '所', color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: '总体完成率', value: isManager ? (completionStats ? `${completionStats.overallPercentage}%` : '0%') : (targetStats.target > 0 ? `${Math.round((targetStats.completed / targetStats.target) * 100)}%` : '0%'), unit: '', color: 'text-green-600', bg: 'bg-green-50' },
-          { label: '调研总次数', value: stats.totalSurveys, unit: '节', color: 'text-purple-600', bg: 'bg-purple-50' },
-          isManager 
-            ? { label: '未达标人数', value: completionStats ? completionStats.incompleteUsers.length : 0, unit: '人', color: 'text-orange-600', bg: 'bg-orange-50' }
-            : { label: '未填写报告数', value: unsubmittedReportsCount, unit: '份', color: 'text-orange-600', bg: 'bg-orange-50' }
-        ].map((stat, index) => (
-          <div key={index} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-sm font-medium text-gray-500">{stat.label}</p>
-                <div className="mt-2 flex items-baseline">
-                  <span className={`text-3xl font-bold ${stat.color}`}>{stat.value}</span>
-                  <span className="ml-1 text-sm text-gray-500">{stat.unit}</span>
+        {(() => {
+          const surveyedSchoolNames = new Set((stats.schoolCoverageData || []).map(s => s.name));
+          const allSystemSchools = schools || [];
+          const unSurveyedSchools = allSystemSchools.filter(s => !surveyedSchoolNames.has(s.name));
+          const statCards = [
+            { label: '调研学校数', value: stats.schoolCount, unit: '所', color: 'text-blue-600', bg: 'bg-blue-50', icon: CheckCircle, clickable: true, popover: 'schools' },
+            { label: '总体完成率', value: isManager ? (completionStats ? `${completionStats.overallPercentage}%` : '0%') : (targetStats.target > 0 ? `${Math.round((targetStats.completed / targetStats.target) * 100)}%` : '0%'), unit: '', color: 'text-green-600', bg: 'bg-green-50', icon: Clock },
+            { label: '调研总次数', value: stats.totalSurveys, unit: '节', color: 'text-purple-600', bg: 'bg-purple-50', icon: Calendar },
+            isManager
+              ? { label: '未达标人数', value: completionStats ? completionStats.incompleteUsers.length : 0, unit: '人', color: 'text-orange-600', bg: 'bg-orange-50', icon: AlertCircle }
+              : { label: '未填写报告数', value: unsubmittedReportsCount, unit: '份', color: 'text-orange-600', bg: 'bg-orange-50', icon: AlertCircle, clickable: true, popover: 'reports' }
+          ];
+          return statCards.map((stat, index) => {
+            const Icon = stat.icon;
+            const isActive = activePopover === stat.popover;
+            return (
+              <div key={index} className={`relative bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow ${stat.clickable ? 'cursor-pointer' : ''}`} onClick={() => stat.clickable && setActivePopover(isActive ? null : stat.popover)}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">{stat.label}</p>
+                    <div className="mt-2 flex items-baseline">
+                      <span className={`text-3xl font-bold ${stat.color}`}>{stat.value}</span>
+                      <span className="ml-1 text-sm text-gray-500">{stat.unit}</span>
+                    </div>
+                  </div>
+                  <div className={`p-2 rounded-lg ${stat.bg}`}>
+                    <Icon className={`w-5 h-5 ${stat.color}`} />
+                  </div>
                 </div>
+                <div className="mt-4 flex items-center text-sm">
+                  <span className="text-gray-500 font-medium flex items-center">
+                    {stat.clickable ? '点击查看详情' : '当前统计数据'}
+                  </span>
+                </div>
+
+                {/* Popover for schools */}
+                {stat.popover === 'schools' && isActive && (
+                  <div className="absolute left-0 top-full mt-2 z-50 w-80 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden" onClick={e => e.stopPropagation()}>
+                    <div className="flex justify-between items-center px-4 py-3 border-b border-gray-100 bg-gray-50">
+                      <h4 className="text-sm font-bold text-gray-800">学校调研详情</h4>
+                      <button onClick={() => setActivePopover(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto p-3 space-y-3">
+                      {/* Surveyed schools */}
+                      <div>
+                        <div className="text-xs font-semibold text-green-700 mb-2 flex items-center"><CheckCircle className="w-3.5 h-3.5 mr-1"/> 已调研学校 ({surveyedSchoolNames.size})</div>
+                        {surveyedSchoolNames.size === 0 ? (
+                          <div className="text-xs text-gray-400 pl-1">暂无已调研学校</div>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {Array.from(surveyedSchoolNames).sort((a,b) => a.localeCompare(b, 'zh-CN')).map(name => (
+                              <span key={name} className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-green-50 text-green-700 border border-green-100">{name}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {/* Unsurveyed schools */}
+                      <div>
+                        <div className="text-xs font-semibold text-gray-600 mb-2 flex items-center"><AlertCircle className="w-3.5 h-3.5 mr-1"/> 未调研学校 ({unSurveyedSchools.length})</div>
+                        {unSurveyedSchools.length === 0 ? (
+                          <div className="text-xs text-gray-400 pl-1">所有学校均已调研</div>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {unSurveyedSchools.map(s => s.name).sort((a,b) => a.localeCompare(b, 'zh-CN')).map(name => (
+                              <span key={name} className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600 border border-gray-200">{name}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Popover for pending reports */}
+                {stat.popover === 'reports' && isActive && (
+                  <div className="absolute left-0 top-full mt-2 z-50 w-80 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden" onClick={e => e.stopPropagation()}>
+                    <div className="flex justify-between items-center px-4 py-3 border-b border-gray-100 bg-gray-50">
+                      <h4 className="text-sm font-bold text-gray-800">未填写集中调研 ({pendingSurveyReports.length})</h4>
+                      <button onClick={() => setActivePopover(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto">
+                      {pendingSurveyReports.length === 0 ? (
+                        <div className="px-4 py-6 text-center text-sm text-gray-500">暂无未填写集中调研</div>
+                      ) : (
+                        <div className="divide-y divide-gray-100">
+                          {pendingSurveyReports.map(report => (
+                            <div key={report.id} className="px-4 py-3 hover:bg-gray-50 flex justify-between items-center group cursor-pointer" onClick={() => { setActivePopover(null); navigate(`/reports?fill=${report.id}`); }}>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-gray-900 truncate">{report.title}</div>
+                                <div className="text-xs text-gray-500 truncate">{report.publishConfig?.surveySchool || '-'} • {report.category}</div>
+                              </div>
+                              <div className="flex items-center ml-2">
+                                <span className="text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded whitespace-nowrap">去填写</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className={`p-2 rounded-lg ${stat.bg}`}>
-                {index === 0 && <CheckCircle className={`w-5 h-5 ${stat.color}`} />}
-                {index === 1 && <Clock className={`w-5 h-5 ${stat.color}`} />}
-                {index === 2 && <Calendar className={`w-5 h-5 ${stat.color}`} />}
-                {index === 3 && <AlertCircle className={`w-5 h-5 ${stat.color}`} />}
-              </div>
-            </div>
-            <div className="mt-4 flex items-center text-sm">
-              <span className="text-gray-500 font-medium flex items-center">
-                当前统计数据
-              </span>
-            </div>
-          </div>
-        ))}
+            );
+          });
+        })()}
       </div>
 
       {/* 日程模块 */}

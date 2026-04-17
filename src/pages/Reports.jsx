@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
+import { useSearchParams } from 'react-router-dom';
+import {
   FileText, Plus, BarChart2, CheckCircle, Trash2, Edit3, XCircle, RotateCcw, Activity,
-  Download, Upload
+  Download, Upload, Calendar
 } from 'lucide-react';
 import SurveyEngine from '../components/SurveyEngine';
 import SurveyPublishModal from '../components/SurveyPublishModal';
 import { useAuth } from '../context/AuthContext';
 import { hasPermission } from '../utils/rbac';
 import DataService from '../services/dataService';
+import SchoolSelector from '../components/SchoolSelector';
 
 export default function Reports() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [reports, setReports] = useState([]);
   const [allResponses, setAllResponses] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -30,6 +33,10 @@ export default function Reports() {
   const [schools, setSchools] = useState([]);
   
   const fileInputRef = useRef(null);
+  const tableScrollRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartX = useRef(0);
+  const dragScrollLeft = useRef(0);
 
   const handleExportSurvey = (report) => {
     try {
@@ -97,12 +104,24 @@ export default function Reports() {
       setAllResponses(fetchedResponses);
       if (DataService.getSchools) {
         const schoolsData = await DataService.getSchools();
-        setSchools(schoolsData.map(s => s.name));
+        setSchools(schoolsData);
       }
       setLoading(false);
+
+      // 处理从 Dashboard 跳转过来的填写请求
+      const fillId = searchParams.get('fill');
+      if (fillId) {
+        const targetReport = fetchedReports.find(r => r.id === fillId);
+        if (targetReport && targetReport.status === 'published') {
+          setCurrentSurvey(targetReport);
+          setActiveTab('fill');
+        }
+        // 清除 URL 参数
+        setSearchParams({}, { replace: true });
+      }
     };
     loadData();
-  }, [user]);
+  }, [user, searchParams, setSearchParams]);
 
   // Refetch responses when entering board mode to ensure latest data
   useEffect(() => {
@@ -316,47 +335,58 @@ export default function Reports() {
         <div className="flex items-center gap-6">
           <h1 className="text-2xl font-bold text-gray-800">集中调研</h1>
           <div className="flex gap-4 items-center">
-            <div className="flex items-center">
+            <div className="flex items-center flex-wrap gap-2">
               <label className="text-sm text-gray-600 mr-2">调研时间:</label>
-              <select 
+              <select
                 value={filterTimeType}
                 onChange={(e) => {
                   setFilterTimeType(e.target.value);
                   if (e.target.value === 'single') setFilterTimeEnd('');
                 }}
-                className="border border-gray-300 rounded text-sm py-1 px-2 mr-2"
+                className="block w-32 py-2 px-3 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
               >
                 <option value="single">具体某一天</option>
                 <option value="range">时间段</option>
               </select>
-              <input 
-                type="date" 
-                value={filterTime} 
-                onChange={(e) => setFilterTime(e.target.value)}
-                className="border border-gray-300 rounded text-sm py-1 px-2"
-              />
+
+              <div className="relative flex items-center">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Calendar className="h-4 w-4 text-gray-400" />
+                </div>
+                <input
+                  type="date"
+                  value={filterTime}
+                  onChange={(e) => setFilterTime(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors"
+                />
+              </div>
+
               {filterTimeType === 'range' && (
                 <>
-                  <span className="mx-2 text-gray-500 text-sm">至</span>
-                  <input 
-                    type="date" 
-                    value={filterTimeEnd} 
-                    onChange={(e) => setFilterTimeEnd(e.target.value)}
-                    className="border border-gray-300 rounded text-sm py-1 px-2"
-                  />
+                  <span className="text-gray-500 text-sm">至</span>
+                  <div className="relative flex items-center">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Calendar className="h-4 w-4 text-gray-400" />
+                    </div>
+                    <input
+                      type="date"
+                      value={filterTimeEnd}
+                      onChange={(e) => setFilterTimeEnd(e.target.value)}
+                      className="block w-full pl-10 pr-3 py-2 text-sm border-gray-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-gray-50 hover:bg-white transition-colors"
+                    />
+                  </div>
                 </>
               )}
             </div>
-            <div>
+            <div className="flex items-center">
               <label className="text-sm text-gray-600 mr-2">调研学校:</label>
-              <select 
-                value={filterSchool} 
-                onChange={(e) => setFilterSchool(e.target.value)}
-                className="border border-gray-300 rounded text-sm py-1 px-2"
-              >
-                <option value="">全部学校</option>
-                {schools.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <SchoolSelector
+                className="w-40"
+                schools={schools}
+                value={filterSchool}
+                onChange={(val) => setFilterSchool(val)}
+                placeholder="全部学校"
+              />
             </div>
             {(filterTime || filterTimeEnd || filterSchool) && (
               <button 
@@ -394,7 +424,24 @@ export default function Reports() {
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <div
+          ref={tableScrollRef}
+          className={`overflow-x-auto select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          onMouseDown={(e) => {
+            setIsDragging(true);
+            dragStartX.current = e.pageX - (tableScrollRef.current?.offsetLeft || 0);
+            dragScrollLeft.current = tableScrollRef.current?.scrollLeft || 0;
+          }}
+          onMouseMove={(e) => {
+            if (!isDragging || !tableScrollRef.current) return;
+            e.preventDefault();
+            const x = e.pageX - (tableScrollRef.current.offsetLeft || 0);
+            const walk = (x - dragStartX.current) * 1.2;
+            tableScrollRef.current.scrollLeft = dragScrollLeft.current - walk;
+          }}
+          onMouseUp={() => setIsDragging(false)}
+          onMouseLeave={() => setIsDragging(false)}
+        >
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
