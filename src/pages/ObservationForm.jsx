@@ -5,6 +5,7 @@ import DataService from '../services/dataService';
 import { uploadToOSS } from '../services/ossService';
 import SchoolSelector from '../components/SchoolSelector';
 import { isTeacher, canEditScheduleBasic, ROLES } from '../utils/rbac';
+import RichTextEditor from '../components/RichTextEditor';
 
 const UploadButton = ({ onUploadSuccess }) => {
   const [uploading, setUploading] = useState(false);
@@ -266,6 +267,19 @@ const ObservationForm = ({ mode = 'edit' }) => {
     loadSubjects();
   }, [formData.school]);
 
+  // RichTextEditor 变更处理（直接接收字符串值，而非事件对象）
+  const handleRichTextChange = (field) => (newValue) => {
+    setFormData(prev => ({ ...prev, [field]: newValue }));
+  };
+
+  const handleRichTextStepChange = (index, field) => (newValue) => {
+    setFormData(prev => {
+      const newSteps = [...prev.processSteps];
+      newSteps[index] = { ...newSteps[index], [field]: newValue };
+      return { ...prev, processSteps: newSteps };
+    });
+  };
+
   // Handle Cascading Resets
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -363,118 +377,68 @@ const ObservationForm = ({ mode = 'edit' }) => {
   };
 
   const toggleSimpleAutoNumber = () => {
-    setSimpleAutoNumber(prev => !prev);
-  };
-
-  const handleSimpleTextKeyDown = (field) => (e) => {
-    if (!simpleAutoNumber || e.key !== 'Enter' || isReadOnly) return;
-
-    const textarea = e.target;
-    const value = textarea.value;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const beforeCursor = value.slice(0, start);
-    const afterCursor = value.slice(end);
-
-    const linesBefore = beforeCursor.split('\n');
-    const currentLineIndex = linesBefore.length - 1;
-    const currentLine = linesBefore[currentLineIndex];
-
-    const allLines = value.split('\n');
-    const hasAnyNumber = allLines.some(l => circleNumberRegex.test(l));
-
-    const shouldAutoNumber = circleNumberRegex.test(currentLine) ||
-      (!hasAnyNumber && currentLineIndex === 0 && currentLine.trim().length > 0);
-
-    if (!shouldAutoNumber) return;
-
-    e.preventDefault();
-
-    // 确保当前行有编号
-    if (!circleNumberRegex.test(currentLine)) {
-      linesBefore[currentLineIndex] = `${CIRCLE_NUMBERS[currentLineIndex]} ${currentLine}`;
-    } else {
-      linesBefore[currentLineIndex] = currentLine.replace(circleNumberRegex, `${CIRCLE_NUMBERS[currentLineIndex]} `);
+    const next = !simpleAutoNumber;
+    setSimpleAutoNumber(next);
+    if (next) {
+      // 开启时，立即对现有文本应用自动编号
+      setFormData(prev => ({
+        ...prev,
+        highlights: applyAutoNumberToText(prev.highlights),
+        problems_suggestions: applyAutoNumberToText(prev.problems_suggestions)
+      }));
     }
-
-    const newBeforeCursor = linesBefore.join('\n');
-    const newLineNum = CIRCLE_NUMBERS[currentLineIndex + 1];
-    const insertText = '\n' + (newLineNum ? newLineNum + ' ' : '');
-    const rawValue = newBeforeCursor + insertText + afterCursor;
-
-    // 重新编号后续已有编号的行
-    const finalLines = rawValue.split('\n').map((line, idx) => {
-      if (idx <= currentLineIndex + 1) return line;
-      if (!line.trim()) return line;
-      const num = CIRCLE_NUMBERS[idx];
-      if (!num) return line;
-      if (circleNumberRegex.test(line)) {
-        return line.replace(circleNumberRegex, num + ' ');
-      }
-      return line;
-    });
-
-    const finalValue = finalLines.join('\n');
-    setFormData(prev => ({ ...prev, [field]: finalValue }));
-
-    const newCursor = newBeforeCursor.length + insertText.length;
-    setTimeout(() => {
-      textarea.setSelectionRange(newCursor, newCursor);
-    }, 0);
   };
 
   const handleUploadSuccess = (field) => (url) => {
-    if (field === 'images') {
-        setFormData(prev => ({
-            ...prev,
-            images: [...(prev.images || []), url]
-        }));
-        return;
-    }
-    
-    const appendText = `[图片: ${url}]`;
+    setFormData(prev => {
+      // 所有上传的图片统一存入 images 数组，避免在文本框中插入冗长的 base64 乱码
+      const newImages = [...(prev.images || []), url];
+      const imageIndex = newImages.length; // 1-based
+      const newState = { ...prev, images: newImages };
 
-    // Check if field is a path for processSteps array
-    if (field.startsWith('processSteps[')) {
+      // images 字段本身不需要插入文本占位符
+      if (field === 'images') {
+        return newState;
+      }
+
+      // 在文本字段中插入简短的占位符，而非完整的 base64 URL
+      const placeholder = `【图片${imageIndex}】`;
+
+      // Check if field is a path for processSteps array
+      if (field.startsWith('processSteps[')) {
         const matches = field.match(/processSteps\[(\d+)\]\.(\w+)/);
         if (matches) {
-            const index = parseInt(matches[1]);
-            const key = matches[2];
-            // Directly update the state for nested property
-            setFormData(prev => {
-                const newSteps = [...prev.processSteps];
-                newSteps[index] = {
-                    ...newSteps[index],
-                    [key]: (newSteps[index][key] ? newSteps[index][key] + '\n' : '') + appendText
-                };
-                return { ...prev, processSteps: newSteps };
-            });
+          const index = parseInt(matches[1]);
+          const key = matches[2];
+          const newSteps = [...prev.processSteps];
+          newSteps[index] = {
+            ...newSteps[index],
+            [key]: (newSteps[index][key] ? newSteps[index][key] + '\n' : '') + placeholder
+          };
+          return { ...newState, processSteps: newSteps };
         }
-        return;
-    }
-    
-    if (field === 'teacher_observation_all') {
-         // Append to teacher_target as a default place for general observation text if no specific field targeted
-         setFormData(prev => ({
-            ...prev,
-            teacher_target: (prev.teacher_target ? prev.teacher_target + '\n' : '') + appendText
-        }));
-        return;
-    }
+        return newState;
+      }
 
-    if (field === 'student_observation_all') {
-         // Append to student_participation as a default
-         setFormData(prev => ({
-            ...prev,
-            student_participation: (prev.student_participation ? prev.student_participation + '\n' : '') + appendText
-        }));
-        return;
-    }
+      if (field === 'teacher_observation_all') {
+        return {
+          ...newState,
+          teacher_target: (prev.teacher_target ? prev.teacher_target + '\n' : '') + placeholder
+        };
+      }
 
-    setFormData(prev => ({
-      ...prev,
-      [field]: (prev[field] ? prev[field] + '\n' : '') + appendText
-    }));
+      if (field === 'student_observation_all') {
+        return {
+          ...newState,
+          student_participation: (prev.student_participation ? prev.student_participation + '\n' : '') + placeholder
+        };
+      }
+
+      return {
+        ...newState,
+        [field]: (prev[field] ? prev[field] + '\n' : '') + placeholder
+      };
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -850,14 +814,14 @@ const ObservationForm = ({ mode = 'edit' }) => {
                       </div>
                     )}
                   </div>
-                  <textarea
-                    name="highlights"
-                    rows={4}
+                  <RichTextEditor
                     value={formData.highlights}
-                    onChange={handleChange}
-                    onKeyDown={handleSimpleTextKeyDown('highlights')}
-                    className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                    onChange={handleRichTextChange('highlights')}
+                    images={formData.images}
+                    rows={4}
                     disabled={isReadOnly}
+                    autoNumber={simpleAutoNumber}
+                    className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                   />
                 </div>
                 <div>
@@ -870,14 +834,14 @@ const ObservationForm = ({ mode = 'edit' }) => {
                       </div>
                     )}
                   </div>
-                  <textarea
-                    name="problems_suggestions"
-                    rows={4}
+                  <RichTextEditor
                     value={formData.problems_suggestions}
-                    onChange={handleChange}
-                    onKeyDown={handleSimpleTextKeyDown('problems_suggestions')}
-                    className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                    onChange={handleRichTextChange('problems_suggestions')}
+                    images={formData.images}
+                    rows={4}
                     disabled={isReadOnly}
+                    autoNumber={simpleAutoNumber}
+                    className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                   />
                 </div>
               </div>
@@ -895,13 +859,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     </div>
                   )}
                 </div>
-                <textarea
-                  name="school_suggestions"
-                  rows={4}
+                <RichTextEditor
                   value={formData.school_suggestions}
-                  onChange={handleChange}
-                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                  onChange={handleRichTextChange('school_suggestions')}
+                  images={formData.images}
+                  rows={4}
                   disabled={isReadOnly}
+                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                 />
               </div>
             </section>
@@ -955,13 +919,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                 </div>
 
                 <div className="flex-1">
-                  <textarea
-                    rows={3}
-                    placeholder="环节内容描述与观察..."
+                  <RichTextEditor
                     value={step.content}
-                    onChange={(e) => handleStepChange(index, 'content', e.target.value)}
-                    className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2 h-full"
+                    onChange={handleRichTextStepChange(index, 'content')}
+                    images={formData.images}
+                    rows={3}
                     disabled={isReadOnly}
+                    className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2 h-full"
                   />
                 </div>
                 
@@ -1006,13 +970,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                       <label className="block text-xs font-medium text-gray-500 mb-1">
                         {item.label}
                       </label>
-                      <textarea
-                        name={item.key}
-                        rows={2}
+                      <RichTextEditor
                         value={formData[item.key]}
-                        onChange={handleChange}
-                        className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                        onChange={handleRichTextChange(item.key)}
+                        images={formData.images}
+                        rows={2}
                         disabled={isReadOnly}
+                        className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                       />
                     </div>
                   ))}
@@ -1037,13 +1001,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                       <label className="block text-xs font-medium text-gray-500 mb-1">
                         {item.label}
                       </label>
-                      <textarea
-                        name={item.key}
-                        rows={2}
+                      <RichTextEditor
                         value={formData[item.key]}
-                        onChange={handleChange}
-                        className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                        onChange={handleRichTextChange(item.key)}
+                        images={formData.images}
+                        rows={2}
                         disabled={isReadOnly}
+                        className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                       />
                     </div>
                   ))}
@@ -1066,13 +1030,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     </div>
                   )}
                 </div>
-                <textarea
-                  name="highlights"
-                  rows={4}
+                <RichTextEditor
                   value={formData.highlights}
-                  onChange={handleChange}
-                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                  onChange={handleRichTextChange('highlights')}
+                  images={formData.images}
+                  rows={4}
                   disabled={isReadOnly}
+                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                 />
               </div>
               <div>
@@ -1084,13 +1048,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     </div>
                   )}
                 </div>
-                <textarea
-                  name="problems_suggestions"
-                  rows={4}
+                <RichTextEditor
                   value={formData.problems_suggestions}
-                  onChange={handleChange}
-                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                  onChange={handleRichTextChange('problems_suggestions')}
+                  images={formData.images}
+                  rows={4}
                   disabled={isReadOnly}
+                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                 />
               </div>
               <div>
@@ -1102,13 +1066,13 @@ const ObservationForm = ({ mode = 'edit' }) => {
                     </div>
                   )}
                 </div>
-                <textarea
-                  name="overall_evaluation"
-                  rows={4}
+                <RichTextEditor
                   value={formData.overall_evaluation}
-                  onChange={handleChange}
-                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
+                  onChange={handleRichTextChange('overall_evaluation')}
+                  images={formData.images}
+                  rows={4}
                   disabled={isReadOnly}
+                  className="block w-full shadow-sm sm:text-sm border-gray-300 rounded-md border p-2"
                 />
               </div>
             </div>

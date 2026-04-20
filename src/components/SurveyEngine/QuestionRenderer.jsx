@@ -306,13 +306,20 @@ export default function QuestionRenderer({
 
       case 'matrix':
         const matrixResponses = (mode === 'board' || mode === 'fill') ? responses : [];
-        
+
         let customRows = [];
+        // 收集每行创建者：默认行所有人可编辑，自定义行仅创建者可编辑
+        const rowOwners = {};
         matrixResponses.forEach(r => {
           const qAnswer = r.answer;
           if (qAnswer && qAnswer.addedRows) {
             qAnswer.addedRows.forEach(rowName => {
               if (!customRows.includes(rowName)) customRows.push(rowName);
+            });
+          }
+          if (qAnswer && qAnswer.rowOwners) {
+            Object.entries(qAnswer.rowOwners).forEach(([rowName, ownerId]) => {
+              if (!rowOwners[rowName]) rowOwners[rowName] = ownerId;
             });
           }
         });
@@ -321,7 +328,12 @@ export default function QuestionRenderer({
             if (!customRows.includes(rowName)) customRows.push(rowName);
           });
         }
-        
+        if (value && value.rowOwners) {
+          Object.entries(value.rowOwners).forEach(([rowName, ownerId]) => {
+            if (!rowOwners[rowName]) rowOwners[rowName] = ownerId;
+          });
+        }
+
         const allRows = [...(props.rows || []), ...customRows];
 
         const occupiedCells = {};
@@ -355,24 +367,31 @@ export default function QuestionRenderer({
               <tbody className="bg-white divide-y divide-gray-200">
                 {allRows.map((rowName) => {
                   const isMyCustomRow = value?.addedRows?.includes(rowName);
+                  const isDefaultRow = (props.rows || []).includes(rowName);
+                  // 行级权限：默认行所有人可编辑；自定义行仅创建者可编辑
+                  const rowOwner = rowOwners[rowName];
+                  const isMyRow = isDefaultRow || !rowOwner || rowOwner === currentUserId;
+                  const rowDisabled = isDisabled || (!isDefaultRow && rowOwner && rowOwner !== currentUserId);
                   return (
-                  <tr key={rowName} className="hover:bg-gray-50 relative group">
+                  <tr key={rowName} className={`hover:bg-gray-50 relative group ${!isDefaultRow && rowOwner && rowOwner !== currentUserId ? 'bg-gray-50/30' : ''}`}>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900 border-r border-gray-200 bg-gray-50/50 break-words max-w-[150px] relative">
                       {rowName}
-                      {!isDisabled && isMyCustomRow && (
-                        <button 
-                          type="button" 
+                      {!rowDisabled && isMyCustomRow && (
+                        <button
+                          type="button"
                           onClick={() => {
                             if (!onChange) return;
                             const currentAdded = value.addedRows.filter(r => r !== rowName);
                             const newCells = { ...value.cells };
+                            const newRowOwners = value.rowOwners ? { ...value.rowOwners } : {};
+                            delete newRowOwners[rowName];
                             // Remove cells associated with this row
                             Object.keys(newCells).forEach(key => {
                               if (key.startsWith(`${rowName}_`)) {
                                 delete newCells[key];
                               }
                             });
-                            onChange({ ...value, addedRows: currentAdded, cells: newCells });
+                            onChange({ ...value, addedRows: currentAdded, cells: newCells, rowOwners: newRowOwners });
                           }}
                           className="absolute right-1 top-1/2 -translate-y-1/2 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-1"
                           title="删除该行"
@@ -386,15 +405,15 @@ export default function QuestionRenderer({
                       const occupied = occupiedCells[cellKey];
                       const isMe = occupied ? occupied.userId === currentUserId : false;
                       const isOccupiedByOther = occupied && !isMe;
-                      
-                      const myVal = (value && value.cells && value.cells[cellKey] !== undefined) 
-                        ? value.cells[cellKey] 
+
+                      const myVal = (value && value.cells && value.cells[cellKey] !== undefined)
+                        ? value.cells[cellKey]
                         : (isMe ? occupied.val : '');
-                        
+
                       const hasLocalValue = value && value.cells && value.cells[cellKey] !== undefined;
                       const displayVal = hasLocalValue ? myVal : (occupied ? occupied.val : '');
-                        
-                      const cellDisabled = isDisabled || isOccupiedByOther;
+
+                      const cellDisabled = rowDisabled || isOccupiedByOther;
 
                       const handleCellChange = (newVal) => {
                         if (!onChange) return;
@@ -516,14 +535,17 @@ export default function QuestionRenderer({
                       
                       const currentAdded = (value && value.addedRows) ? value.addedRows : [];
                       const newCells = (value && value.cells) ? { ...value.cells } : {};
-                      
+                      const newRowOwners = (value && value.rowOwners) ? { ...value.rowOwners } : {};
+                      // 记录该行的创建者，用于行级权限隔离
+                      newRowOwners[rowName] = currentUserId;
+
                       if (currentUser?.subject) {
                         const subjectColIdx = (props.cols || []).findIndex(c => c.includes('学科') || c.includes('科目'));
                         if (subjectColIdx !== -1) {
                           newCells[`${rowName}_${subjectColIdx}`] = currentUser.subject;
                         }
                       }
-                      
+
                       const serialColIdx = (props.cols || []).findIndex(c => c.includes('序号'));
                       if (serialColIdx !== -1) {
                         newCells[`${rowName}_${serialColIdx}`] = allRows.length + 1;
@@ -533,7 +555,8 @@ export default function QuestionRenderer({
                         onChange({
                           ...(value || {}),
                           addedRows: [...currentAdded, rowName],
-                          cells: newCells
+                          cells: newCells,
+                          rowOwners: newRowOwners
                         });
                       }
                     }

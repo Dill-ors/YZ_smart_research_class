@@ -252,8 +252,10 @@ const Dashboard = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {(() => {
-          const surveyedSchoolNames = new Set((stats.schoolCoverageData || []).map(s => s.name));
-          const allSystemSchools = schools || [];
+          // 排除"其它学校"（跨区市听课专用），不纳入统计展示
+          const isCountableSchool = (name) => name !== '其它学校';
+          const surveyedSchoolNames = new Set((stats.schoolCoverageData || []).map(s => s.name).filter(isCountableSchool));
+          const allSystemSchools = (schools || []).filter(s => isCountableSchool(s.name));
           const unSurveyedSchools = allSystemSchools.filter(s => !surveyedSchoolNames.has(s.name));
           const statCards = [
             { label: '调研学校数', value: stats.schoolCount, unit: '所', color: 'text-blue-600', bg: 'bg-blue-50', icon: CheckCircle, clickable: true, popover: 'schools' },

@@ -677,8 +677,11 @@ const DataService = {
       const allSchools = [...new Set(accessibleSurveys.map(s => s.school).filter(Boolean))];
       const allSubjects = [...new Set(accessibleSurveys.map(s => s.subject).filter(Boolean))];
 
-      const schoolSet = new Set(surveys.map(s => s.school).filter(Boolean));
-      
+      // 排除"其它学校"（跨区市听课专用）的统计
+      const isCountableSchool = (name) => name !== '其它学校';
+
+      const schoolSet = new Set(surveys.map(s => s.school).filter(s => s && isCountableSchool(s)));
+
       const subjectCounts = {};
       const lessonTypeCounts = {};
       const schoolCounts = {};
@@ -687,7 +690,7 @@ const DataService = {
           if (s.subject) {
             subjectCounts[s.subject] = (subjectCounts[s.subject] || 0) + 1;
           }
-          
+
           if (s.lesson_type) {
             let typeName = s.lesson_type;
             const typeMap = {
@@ -701,7 +704,7 @@ const DataService = {
             lessonTypeCounts[typeName] = (lessonTypeCounts[typeName] || 0) + 1;
           }
 
-          if (s.school) {
+          if (s.school && isCountableSchool(s.school)) {
             schoolCounts[s.school] = (schoolCounts[s.school] || 0) + 1;
           }
       });
@@ -716,7 +719,7 @@ const DataService = {
         value: lessonTypeCounts[key]
       }));
 
-      const totalSchoolCount = surveys.filter(s => s.school).length;
+      const totalSchoolCount = surveys.filter(s => s.school && isCountableSchool(s.school)).length;
       const schoolCoverageData = Object.keys(schoolCounts)
         .map(key => ({
           name: key,
@@ -745,7 +748,7 @@ const DataService = {
       }
 
       const schoolsData = await this.getSchools();
-      const totalSystemSchools = schoolsData.length;
+      const totalSystemSchools = schoolsData.filter(s => s.name !== '其它学校').length;
       return {
           schoolCount: schoolSet.size,
           totalSurveys: surveys.length,
@@ -810,13 +813,21 @@ const DataService = {
             if (!res.ok) throw new Error('Failed to fetch');
             const data = await res.json();
             // 如果后端正常返回了数组（即便是空数组），都应该使用后端的数据，而不是回退到假数据
-            if (Array.isArray(data)) return data;
+            if (Array.isArray(data)) {
+                // 自动追加"其它学校"，用于跨区市听课汇总，不纳入统计
+                const hasOther = data.some(s => s.name === '其它学校');
+                if (!hasOther) {
+                    return [...data, { id: 'other_school', name: '其它学校', region: '跨区市', type: '跨区市' }];
+                }
+                return data;
+            }
         } catch (e) {
             console.error('Fetch schools error:', e);
         }
         return [
             { id: '1', name: '市北四实验', region: '市北区', type: '高中' },
-            { id: '2', name: '青岛五十三中', region: '市北区', type: '初中' }
+            { id: '2', name: '青岛五十三中', region: '市北区', type: '初中' },
+            { id: 'other_school', name: '其它学校', region: '跨区市', type: '跨区市' }
         ];
     },
 
