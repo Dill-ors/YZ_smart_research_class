@@ -103,14 +103,14 @@ const TABLE_SCHEMAS = {
       problems_suggestions TEXT,
       school_suggestions TEXT,
       overall_evaluation LONGTEXT,
-      record_mode VARCHAR(50),
+      recordMode VARCHAR(255),
       title VARCHAR(500),
       created_by VARCHAR(255),
       images JSON,
       process_steps JSON,
-      custom_survey_data JSON,
+      customSurveyData JSON,
       extra_data JSON,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      createdAt VARCHAR(255),
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `,
@@ -185,9 +185,9 @@ const FIELD_MAP = {
     student_thinking: 'student_thinking', student_achievement: 'student_achievement',
     highlights: 'highlights', problems_suggestions: 'problems_suggestions',
     school_suggestions: 'school_suggestions', overall_evaluation: 'overall_evaluation',
-    recordMode: 'record_mode', title: 'title', createdBy: 'created_by',
-    images: 'images', processSteps: 'process_steps', customSurveyData: 'custom_survey_data',
-    createdAt: 'created_at', updatedAt: 'updated_at'
+    recordMode: 'recordMode', title: 'title', createdBy: 'created_by',
+    images: 'images', processSteps: 'process_steps', customSurveyData: 'customSurveyData',
+    createdAt: 'createdAt', updatedAt: 'updated_at'
   },
   reports: {
     id: 'id', title: 'title', description: 'description', status: 'status',
@@ -208,7 +208,7 @@ const FIELD_MAP = {
 
 // Columns that should be stored as JSON
 const JSON_COLUMNS = {
-  surveys: ['images', 'process_steps', 'custom_survey_data', 'extra_data'],
+  surveys: ['images', 'process_steps', 'customSurveyData', 'extra_data'],
   reports: ['questions', 'publish_config'],
   responses: ['answers'],
   userGroups: ['members']
