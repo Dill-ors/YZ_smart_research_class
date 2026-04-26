@@ -38,8 +38,7 @@ const TABLE_SCHEMAS = {
       school VARCHAR(255),
       subject VARCHAR(100),
       status VARCHAR(50) DEFAULT 'active',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      lastLogin VARCHAR(50)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `,
   schools: `
@@ -48,8 +47,7 @@ const TABLE_SCHEMAS = {
       name VARCHAR(255) NOT NULL,
       region VARCHAR(100),
       type VARCHAR(50),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      createdAt VARCHAR(50)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `,
   subjects: `
@@ -58,22 +56,21 @@ const TABLE_SCHEMAS = {
       name VARCHAR(100) NOT NULL,
       code VARCHAR(50),
       type VARCHAR(50),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      createdAt VARCHAR(50)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `,
   targets: `
     CREATE TABLE IF NOT EXISTS targets (
       id VARCHAR(255) PRIMARY KEY,
-      user_id VARCHAR(255),
-      user_name VARCHAR(100),
-      target_type VARCHAR(50),
-      target_value INT,
+      userId VARCHAR(255),
+      userName VARCHAR(100),
+      targetType VARCHAR(50),
+      targetValue INT,
       period VARCHAR(50),
-      setter_id VARCHAR(255),
-      setter_name VARCHAR(100),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      setterId VARCHAR(255),
+      setterName VARCHAR(100),
+      createdAt VARCHAR(50),
+      updatedAt VARCHAR(50)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `,
   surveys: `
@@ -110,7 +107,7 @@ const TABLE_SCHEMAS = {
       process_steps JSON,
       customSurveyData JSON,
       extra_data JSON,
-      createdAt VARCHAR(255),
+      createdAt VARCHAR(50),
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `,
@@ -123,23 +120,21 @@ const TABLE_SCHEMAS = {
       category VARCHAR(100),
       created_at VARCHAR(50),
       response_count INT DEFAULT 0,
-      auto_numbering BOOLEAN DEFAULT FALSE,
+      autoNumbering BOOLEAN DEFAULT FALSE,
       questions JSON,
-      publish_config JSON,
+      publishConfig JSON,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `,
   responses: `
     CREATE TABLE IF NOT EXISTS responses (
       id VARCHAR(255) PRIMARY KEY,
-      survey_id VARCHAR(255),
-      user_id VARCHAR(100),
-      user_name VARCHAR(100),
+      surveyId VARCHAR(255),
+      userId VARCHAR(100),
+      userName VARCHAR(100),
       role VARCHAR(50),
       answers JSON,
-      time VARCHAR(50),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      time VARCHAR(50)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `,
   userGroups: `
@@ -148,32 +143,31 @@ const TABLE_SCHEMAS = {
       name VARCHAR(255),
       description TEXT,
       members JSON,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      createdAt VARCHAR(50),
+      updatedAt VARCHAR(50)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `
 };
 
 // ---------- Field Mappings (JS property -> SQL column) ----------
+// 所有字段名与数据库实际列名完全一致
 
 const FIELD_MAP = {
   users: {
     id: 'id', username: 'username', password: 'password', name: 'name',
     role: 'role', school: 'school', subject: 'subject', status: 'status',
-    createdAt: 'created_at', updatedAt: 'updated_at'
+    lastLogin: 'lastLogin'
   },
   schools: {
-    id: 'id', name: 'name', region: 'region', type: 'type',
-    createdAt: 'created_at', updatedAt: 'updated_at'
+    id: 'id', name: 'name', region: 'region', type: 'type', createdAt: 'createdAt'
   },
   subjects: {
-    id: 'id', name: 'name', code: 'code', type: 'type',
-    createdAt: 'created_at', updatedAt: 'updated_at'
+    id: 'id', name: 'name', code: 'code', type: 'type', createdAt: 'createdAt'
   },
   targets: {
-    id: 'id', userId: 'user_id', userName: 'user_name', targetType: 'target_type',
-    targetValue: 'target_value', period: 'period', setterId: 'setter_id',
-    setterName: 'setter_name', createdAt: 'created_at', updatedAt: 'updated_at'
+    id: 'id', userId: 'userId', userName: 'userName', targetType: 'targetType',
+    targetValue: 'targetValue', period: 'period', setterId: 'setterId',
+    setterName: 'setterName', createdAt: 'createdAt', updatedAt: 'updatedAt'
   },
   surveys: {
     id: 'id', status: 'status', school: 'school', grade: 'grade', class: 'class',
@@ -187,29 +181,28 @@ const FIELD_MAP = {
     school_suggestions: 'school_suggestions', overall_evaluation: 'overall_evaluation',
     recordMode: 'recordMode', title: 'title', createdBy: 'created_by',
     images: 'images', processSteps: 'process_steps', customSurveyData: 'customSurveyData',
-    createdAt: 'createdAt', updatedAt: 'updated_at'
+    createdAt: 'createdAt'
   },
   reports: {
     id: 'id', title: 'title', description: 'description', status: 'status',
     category: 'category', created_at: 'created_at', response_count: 'response_count',
-    autoNumbering: 'auto_numbering', questions: 'questions',
-    publishConfig: 'publish_config', updatedAt: 'updated_at'
+    autoNumbering: 'autoNumbering', questions: 'questions',
+    publishConfig: 'publishConfig'
   },
   responses: {
-    id: 'id', surveyId: 'survey_id', userId: 'user_id', userName: 'user_name',
-    role: 'role', answers: 'answers', time: 'time',
-    createdAt: 'created_at', updatedAt: 'updated_at'
+    id: 'id', surveyId: 'surveyId', userId: 'userId', userName: 'userName',
+    role: 'role', answers: 'answers', time: 'time'
   },
   userGroups: {
     id: 'id', name: 'name', description: 'description', members: 'members',
-    createdAt: 'created_at', updatedAt: 'updated_at'
+    createdAt: 'createdAt', updatedAt: 'updatedAt'
   }
 };
 
 // Columns that should be stored as JSON
 const JSON_COLUMNS = {
   surveys: ['images', 'process_steps', 'customSurveyData', 'extra_data'],
-  reports: ['questions', 'publish_config'],
+  reports: ['questions', 'publishConfig'],
   responses: ['answers'],
   userGroups: ['members']
 };
@@ -253,7 +246,7 @@ function buildInsertSql(table, item) {
       columns.push(sqlKey);
       const v = toSqlValue(table, jsKey, item[jsKey]);
       values.push(v);
-      if (sqlKey !== 'id' && sqlKey !== 'created_at') {
+      if (sqlKey !== 'id' && !/^(created|updated)/i.test(sqlKey)) {
         updates.push(`${sqlKey} = VALUES(${sqlKey})`);
       }
     }
