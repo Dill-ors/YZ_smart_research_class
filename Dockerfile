@@ -1,18 +1,15 @@
 # 1. 前端构建阶段
 FROM node:22-alpine AS build-frontend
 WORKDIR /app
-# 复制依赖配置并安装（使用国内镜像加速构建）
 COPY package.json package-lock.json* ./
 RUN npm install --registry=https://registry.npmmirror.com
-# 复制所有前端源码并进行打包
 COPY . .
 RUN npm run build
 
-# 1.5 后端依赖构建阶段 (解决 sqlite3 原生模块编译问题)
+# 1.5 后端依赖构建阶段 (mysql2 无需原生模块编译)
 FROM node:22-alpine AS build-backend
 WORKDIR /app/server
-COPY server/package.json server/package-lock.json* ./
-RUN apk add --no-cache python3 make g++ sqlite
+COPY server/package.json ./
 RUN npm install --production --registry=https://registry.npmmirror.com
 
 # 2. 运行阶段 (Nginx 代理静态资源 + Node.js 后端服务)
@@ -21,8 +18,8 @@ FROM nginx:alpine
 # 替换 Alpine 系统的软件源为清华大学镜像源 (TUNA)
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories
 
-# 安装 Node.js 运行环境，以及 sqlite 库
-RUN apk add --no-cache nodejs npm sqlite
+# 安装 Node.js 运行环境
+RUN apk add --no-cache nodejs npm
 
 # 覆盖默认的 Nginx 配置
 COPY nginx.conf /etc/nginx/conf.d/default.conf
