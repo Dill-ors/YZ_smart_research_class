@@ -368,10 +368,19 @@ app.get('/api/health', async (req, res) => {
 
 // Generic CRUD routes with field mapping
 const setupTableRoutes = (tableName) => {
-  // GET all
+  // GET all (with optional pagination)
   app.get(`/api/${tableName}`, async (req, res) => {
     try {
-      const [rows] = await pool.execute(`SELECT * FROM ${tableName}`);
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 0;
+      let sql = `SELECT * FROM ${tableName}`;
+      let params = [];
+      if (limit > 0) {
+        const offset = (page - 1) * limit;
+        sql += ` LIMIT ? OFFSET ?`;
+        params = [limit, offset];
+      }
+      const [rows] = await pool.execute(sql, params);
       const data = rows.map(row => rowToObject(tableName, row));
       res.json(data);
     } catch (err) {
